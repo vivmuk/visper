@@ -63,23 +63,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Create entry document
-    const entryData: Omit<Entry, "id"> = {
+    const entryData: any = {
       userId,
       type: body.type,
       source: body.source || (body.improvedText ? "improved" : "raw"),
-      rawText: body.rawText,
-      improvedText: body.improvedText,
       createdAt: FieldValue.serverTimestamp() as any,
       updatedAt: FieldValue.serverTimestamp() as any,
-      timezone: body.timezone,
-      device: body.device,
       tags: body.tags || [],
       entities: [],
-      url: body.url,
-      imageUrl: body.imageUrl,
-      imageStoragePath: body.imageStoragePath,
-      imageMetadata: body.imageMetadata,
     };
+
+    // Only include fields that are defined (Firestore doesn't allow undefined)
+    if (body.rawText !== undefined) entryData.rawText = body.rawText;
+    if (body.improvedText !== undefined) entryData.improvedText = body.improvedText;
+    if (body.timezone !== undefined) entryData.timezone = body.timezone;
+    if (body.device !== undefined) entryData.device = body.device;
+    if (body.url !== undefined) entryData.url = body.url;
+    if (body.imageUrl !== undefined) entryData.imageUrl = body.imageUrl;
+    if (body.imageStoragePath !== undefined) entryData.imageStoragePath = body.imageStoragePath;
+    if (body.imageMetadata !== undefined) entryData.imageMetadata = body.imageMetadata;
 
     console.log("Attempting to save entry to Firestore...");
     const docRef = await adminDb.collection("entries").add(entryData);
