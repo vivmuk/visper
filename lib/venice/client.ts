@@ -1,9 +1,12 @@
 // Venice AI API client
 const VENICE_API_URL = "https://api.venice.ai/api/v1";
-const VENICE_API_KEY = process.env.VENICE_API_KEY;
 
-if (!VENICE_API_KEY) {
-  throw new Error("VENICE_API_KEY environment variable is not set");
+function getVeniceApiKey(): string {
+  const apiKey = process.env.VENICE_API_KEY;
+  if (!apiKey) {
+    throw new Error("VENICE_API_KEY environment variable is not set");
+  }
+  return apiKey;
 }
 
 export interface VeniceChatMessage {
@@ -54,10 +57,11 @@ export interface VeniceChatResponse {
 export async function callVeniceAPI(
   request: VeniceChatRequest
 ): Promise<VeniceChatResponse> {
+  const apiKey = getVeniceApiKey();
   const response = await fetch(`${VENICE_API_URL}/chat/completions`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${VENICE_API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
