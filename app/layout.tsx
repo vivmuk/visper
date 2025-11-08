@@ -5,8 +5,13 @@ export const metadata: Metadata = {
   title: "Whisper - A Thoughtful Journal",
   description: "A delightfully simple journal that improves your thoughts with AI",
   manifest: "/manifest.json",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
   themeColor: "#ffffff",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1",
 };
 
 export default function RootLayout({

@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Output configuration for Railway
-  output: 'standalone',
+  // Railway works best with standard Next.js output
+  // Remove standalone for Railway deployment
 }
 
 module.exports = nextConfig

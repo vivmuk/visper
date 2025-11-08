@@ -1,6 +1,9 @@
 // API Route: GET /api/search
 // Search entries by text, tags, sentiment, date range, and semantic similarity
 import { NextRequest, NextResponse } from "next/server";
+
+// Mark this route as dynamic since it uses searchParams
+export const dynamic = 'force-dynamic';
 import { adminDb } from "@/lib/firebase/admin";
 import type { SearchRequest, Entry } from "@/types";
 
