@@ -1,0 +1,11 @@
+{
+  "name": "Whisper",
+  "short_name": "Whisper",
+  "description": "A thoughtful journal that thinks with you.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff"
+}
+
+
