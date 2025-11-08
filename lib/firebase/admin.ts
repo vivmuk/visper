@@ -2,12 +2,14 @@
 import { initializeApp, getApps, cert, App } from "firebase-admin/app";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
 import { getAuth, Auth } from "firebase-admin/auth";
+import { getStorage, Storage } from "firebase-admin/storage";
 import * as path from "path";
 import * as fs from "fs";
 
 let app: App;
 let adminDb: Firestore;
 let adminAuth: Auth;
+let adminStorage: Storage;
 
 // Initialize Firebase Admin (singleton pattern)
 if (!getApps().length) {
@@ -45,6 +47,7 @@ if (!getApps().length) {
 
 adminDb = getFirestore(app);
 adminAuth = getAuth(app);
+adminStorage = getStorage(app);
 
-export { app, adminDb, adminAuth };
+export { app, adminDb, adminAuth, adminStorage };
 

@@ -119,7 +119,7 @@ export default function UrlSummarizer({
                     key={idx}
                     className="p-3 bg-gray-50 border-l-4 border-blue-500 italic text-gray-700"
                   >
-                    "{quote.text}"
+                    &ldquo;{quote.text}&rdquo;
                   </blockquote>
                 ))}
               </div>

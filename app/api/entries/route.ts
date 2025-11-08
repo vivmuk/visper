@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (body.type === "image" && !body.imageUrl) {
+      return NextResponse.json(
+        { error: "imageUrl is required for image entries" },
+        { status: 400 }
+      );
+    }
+
     // Create entry document
     const entryData: Omit<Entry, "id"> = {
       userId: body.userId,
@@ -48,6 +55,9 @@ export async function POST(request: NextRequest) {
       tags: body.tags || [],
       entities: [],
       url: body.url,
+      imageUrl: body.imageUrl,
+      imageStoragePath: body.imageStoragePath,
+      imageMetadata: body.imageMetadata,
     };
 
     const docRef = await adminDb.collection("entries").add(entryData);
@@ -100,10 +110,14 @@ export async function GET(request: NextRequest) {
       query = query.where("sentiment", "==", sentiment);
     }
 
-    // Date range
+    // Date range filtering
     const from = searchParams.get("from");
     const to = searchParams.get("to");
 
+    // Note: Firestore requires orderBy before where clauses with range filters
+    // So we'll filter after fetching if needed, or use a different approach
+    // For now, we'll filter client-side after fetching
+    
     // Order by createdAt descending (newest first)
     query = query.orderBy("createdAt", "desc");
 
@@ -112,10 +126,51 @@ export async function GET(request: NextRequest) {
     query = query.limit(limit);
 
     const snapshot = await query.get();
-    const entries = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Entry[];
+    let entries = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+      };
+    }) as Entry[];
+
+    // Filter by date range if provided (client-side filtering)
+    // This is necessary because Firestore requires orderBy before range filters
+    if (from) {
+      const fromDate = new Date(from);
+      entries = entries.filter((entry) => {
+        if (!entry.createdAt) return false;
+        let entryDate: Date;
+        if (entry.createdAt && typeof (entry.createdAt as any).toDate === "function") {
+          // Firestore Timestamp
+          entryDate = (entry.createdAt as any).toDate();
+        } else if (entry.createdAt && (entry.createdAt as any).seconds) {
+          // Firestore Timestamp in serialized form
+          entryDate = new Date((entry.createdAt as any).seconds * 1000);
+        } else {
+          entryDate = new Date(entry.createdAt as any);
+        }
+        return entryDate >= fromDate;
+      });
+    }
+
+    if (to) {
+      const toDate = new Date(to);
+      entries = entries.filter((entry) => {
+        if (!entry.createdAt) return false;
+        let entryDate: Date;
+        if (entry.createdAt && typeof (entry.createdAt as any).toDate === "function") {
+          entryDate = (entry.createdAt as any).toDate();
+        } else if (entry.createdAt && (entry.createdAt as any).seconds) {
+          entryDate = new Date((entry.createdAt as any).seconds * 1000);
+        } else {
+          entryDate = new Date(entry.createdAt as any);
+        }
+        return entryDate <= toDate;
+      });
+    }
 
     return NextResponse.json({ entries, total: entries.length });
   } catch (error) {

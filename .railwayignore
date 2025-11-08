@@ -1,0 +1,21 @@
+# Files to ignore when deploying to Railway
+node_modules
+.next
+.env.local
+.env*.local
+*.log
+.DS_Store
+.firebase
+firebase-debug.log
+firestore-debug.log
+*-firebase-adminsdk-*.json
+.git
+.gitignore
+README.md
+DEPLOYMENT.md
+FIREBASE_SETUP_GUIDE.md
+SETUP_INSTRUCTIONS.md
+NEXT_STEPS.md
+PROJECT_STATUS.md
+RUN_APP.md
+

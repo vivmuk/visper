@@ -1,6 +1,6 @@
 // Core data types for Whisper journal app
 
-export type EntryType = "note" | "url";
+export type EntryType = "note" | "url" | "image";
 export type EntrySource = "raw" | "improved" | "both";
 export type Sentiment = "negative" | "neutral" | "positive";
 
@@ -46,6 +46,17 @@ export interface Entry {
     locator?: string; // e.g., "paragraph 3"
   }>;
   
+  // Image-specific fields
+  imageUrl?: string;
+  imageStoragePath?: string;
+  imageMetadata?: {
+    filename: string;
+    size: number;
+    contentType: string;
+    width?: number;
+    height?: number;
+  };
+  
   // Provenance
   provenance?: {
     improvedFromEntryId?: string;
@@ -90,6 +101,15 @@ export interface CreateEntryRequest {
   rawText?: string;
   improvedText?: string;
   url?: string;
+  imageUrl?: string;
+  imageStoragePath?: string;
+  imageMetadata?: {
+    filename: string;
+    size: number;
+    contentType: string;
+    width?: number;
+    height?: number;
+  };
   tags?: string[];
   timezone?: string;
   device?: string;
