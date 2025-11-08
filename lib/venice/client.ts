@@ -235,3 +235,184 @@ export async function summarizeUrl(
   };
 }
 
+// Extract enriched metadata from text using GLM 4.6
+export async function extractTextMetadata(text: string): Promise<{
+  tags: string[];
+  entities: string[];
+  topics: string[];
+  keywords: string[];
+  summary: string;
+  sentiment: "negative" | "neutral" | "positive";
+  category?: string;
+}> {
+  const request: VeniceChatRequest = {
+    model: "glm-4-6", // GLM 4.6 model for text analysis
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are an expert at analyzing text and extracting rich metadata. Analyze the text and return comprehensive metadata including: tags (5-10 relevant tags), entities (people, places, organizations mentioned), topics (main themes), keywords (important terms), a brief summary, sentiment, and category (if applicable).",
+      },
+      {
+        role: "user",
+        content: text,
+      },
+    ],
+    temperature: 0.5,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "text_metadata_response",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "5-10 relevant tags for categorization",
+            },
+            entities: {
+              type: "array",
+              items: { type: "string" },
+              description: "Named entities (people, places, organizations)",
+            },
+            topics: {
+              type: "array",
+              items: { type: "string" },
+              description: "Main themes or topics discussed",
+            },
+            keywords: {
+              type: "array",
+              items: { type: "string" },
+              description: "Important keywords or terms",
+            },
+            summary: {
+              type: "string",
+              description: "Brief summary of the content",
+            },
+            sentiment: {
+              type: "string",
+              enum: ["negative", "neutral", "positive"],
+            },
+            category: {
+              type: "string",
+              description: "Optional category (e.g., 'work', 'personal', 'travel', 'reflection')",
+            },
+          },
+          required: ["tags", "entities", "topics", "keywords", "summary", "sentiment"],
+          additionalProperties: false,
+        },
+      },
+    },
+  };
+
+  const response = await callVeniceAPI(request);
+  const content = response.choices[0]?.message?.content;
+  
+  if (!content) {
+    throw new Error("No content in Venice API response");
+  }
+
+  const parsed = JSON.parse(content);
+  return {
+    tags: parsed.tags || [],
+    entities: parsed.entities || [],
+    topics: parsed.topics || [],
+    keywords: parsed.keywords || [],
+    summary: parsed.summary || "",
+    sentiment: parsed.sentiment,
+    category: parsed.category,
+  };
+}
+
+// Extract enriched metadata from image using Mistral
+export async function extractImageMetadata(imageUrl: string): Promise<{
+  tags: string[];
+  description: string;
+  objects: string[];
+  scene: string;
+  mood?: string;
+  colors?: string[];
+  category?: string;
+}> {
+  const request: VeniceChatRequest = {
+    model: "mistral-large-latest", // Mistral model for image analysis
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are an expert at analyzing images and extracting rich metadata. Analyze the image at the provided URL and return comprehensive metadata including: tags (5-10 relevant tags), a detailed description, objects detected, scene description, mood, dominant colors, and category.",
+      },
+      {
+        role: "user",
+        content: `Please analyze this image: ${imageUrl}. Extract comprehensive metadata for searchability and categorization.`,
+      },
+    ],
+    temperature: 0.5,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "image_metadata_response",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "5-10 relevant tags for categorization",
+            },
+            description: {
+              type: "string",
+              description: "Detailed description of the image",
+            },
+            objects: {
+              type: "array",
+              items: { type: "string" },
+              description: "Objects, people, or elements detected in the image",
+            },
+            scene: {
+              type: "string",
+              description: "Description of the scene or setting",
+            },
+            mood: {
+              type: "string",
+              description: "Mood or atmosphere of the image",
+            },
+            colors: {
+              type: "array",
+              items: { type: "string" },
+              description: "Dominant colors in the image",
+            },
+            category: {
+              type: "string",
+              description: "Category (e.g., 'nature', 'portrait', 'food', 'document', 'screenshot')",
+            },
+          },
+          required: ["tags", "description", "objects", "scene"],
+          additionalProperties: false,
+        },
+      },
+    },
+  };
+
+  const response = await callVeniceAPI(request);
+  const content = response.choices[0]?.message?.content;
+  
+  if (!content) {
+    throw new Error("No content in Venice API response");
+  }
+
+  const parsed = JSON.parse(content);
+  return {
+    tags: parsed.tags || [],
+    description: parsed.description || "",
+    objects: parsed.objects || [],
+    scene: parsed.scene || "",
+    mood: parsed.mood,
+    colors: parsed.colors || [],
+    category: parsed.category,
+  };
+}
+

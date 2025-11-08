@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { getUserIdFromRequest } from "@/lib/auth/middleware";
+import { extractTextMetadata, extractImageMetadata } from "@/lib/venice/client";
 import type { CreateEntryRequest, Entry, SearchRequest } from "@/types";
 
 // POST /api/entries - Create entry
@@ -62,6 +63,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Extract enriched metadata using Venice AI
+    let enrichedMetadata: any = {};
+    try {
+      if (body.type === "note" || body.type === "url") {
+        // Extract metadata from text using GLM 4.6
+        const textToAnalyze = body.improvedText || body.rawText || "";
+        if (textToAnalyze) {
+          console.log("Extracting text metadata using GLM 4.6...");
+          const textMeta = await extractTextMetadata(textToAnalyze);
+          enrichedMetadata = {
+            tags: [...(body.tags || []), ...(textMeta.tags || [])], // Merge user tags with AI tags
+            entities: textMeta.entities || [],
+            topics: textMeta.topics || [],
+            keywords: textMeta.keywords || [],
+            sentiment: textMeta.sentiment,
+            category: textMeta.category,
+            aiModel: "glm-4-6",
+          };
+        }
+      } else if (body.type === "image" && body.imageUrl) {
+        // Extract metadata from image using Mistral
+        console.log("Extracting image metadata using Mistral...");
+        const imageMeta = await extractImageMetadata(body.imageUrl);
+        enrichedMetadata = {
+          tags: [...(body.tags || []), ...(imageMeta.tags || [])], // Merge user tags with AI tags
+          imageDescription: imageMeta.description,
+          imageObjects: imageMeta.objects || [],
+          imageScene: imageMeta.scene,
+          imageMood: imageMeta.mood,
+          imageColors: imageMeta.colors || [],
+          category: imageMeta.category,
+          aiModel: "mistral-large-latest",
+        };
+      }
+    } catch (metadataError) {
+      console.error("Error extracting metadata (continuing without it):", metadataError);
+      // Continue without enriched metadata if extraction fails
+    }
+
     // Create entry document
     const entryData: any = {
       userId,
@@ -69,9 +109,23 @@ export async function POST(request: NextRequest) {
       source: body.source || (body.improvedText ? "improved" : "raw"),
       createdAt: FieldValue.serverTimestamp() as any,
       updatedAt: FieldValue.serverTimestamp() as any,
-      tags: body.tags || [],
-      entities: [],
+      tags: enrichedMetadata.tags || body.tags || [],
+      entities: enrichedMetadata.entities || [],
     };
+
+    // Add enriched metadata fields
+    if (enrichedMetadata.topics) entryData.topics = enrichedMetadata.topics;
+    if (enrichedMetadata.keywords) entryData.keywords = enrichedMetadata.keywords;
+    if (enrichedMetadata.sentiment) entryData.sentiment = enrichedMetadata.sentiment;
+    if (enrichedMetadata.category) entryData.category = enrichedMetadata.category;
+    if (enrichedMetadata.aiModel) entryData.aiModel = enrichedMetadata.aiModel;
+    
+    // Image-specific enriched metadata
+    if (enrichedMetadata.imageDescription) entryData.imageDescription = enrichedMetadata.imageDescription;
+    if (enrichedMetadata.imageObjects) entryData.imageObjects = enrichedMetadata.imageObjects;
+    if (enrichedMetadata.imageScene) entryData.imageScene = enrichedMetadata.imageScene;
+    if (enrichedMetadata.imageMood) entryData.imageMood = enrichedMetadata.imageMood;
+    if (enrichedMetadata.imageColors) entryData.imageColors = enrichedMetadata.imageColors;
 
     // Only include fields that are defined (Firestore doesn't allow undefined)
     if (body.rawText !== undefined) entryData.rawText = body.rawText;
@@ -83,7 +137,7 @@ export async function POST(request: NextRequest) {
     if (body.imageStoragePath !== undefined) entryData.imageStoragePath = body.imageStoragePath;
     if (body.imageMetadata !== undefined) entryData.imageMetadata = body.imageMetadata;
 
-    console.log("Attempting to save entry to Firestore...");
+    console.log("Attempting to save entry to Firestore with enriched metadata...");
     const docRef = await adminDb.collection("entries").add(entryData);
     console.log("Entry saved successfully with ID:", docRef.id);
 

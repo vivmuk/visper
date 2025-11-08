@@ -30,6 +30,18 @@ export interface Entry {
   sentiment?: Sentiment;
   qualityScore?: number; // 0-1
   
+  // Enriched metadata (from GLM 4.6 / Mistral)
+  topics?: string[]; // Main themes or topics
+  keywords?: string[]; // Important keywords
+  category?: string; // Entry category (work, personal, travel, etc.)
+  
+  // Image-specific enriched metadata (from Mistral)
+  imageDescription?: string; // Detailed image description
+  imageObjects?: string[]; // Objects detected in image
+  imageScene?: string; // Scene description
+  imageMood?: string; // Mood/atmosphere
+  imageColors?: string[]; // Dominant colors
+  
   // URL-specific fields
   url?: string;
   urlTitle?: string;
