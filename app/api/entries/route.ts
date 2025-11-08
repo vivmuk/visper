@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     // Create entry document
     const entryData: Omit<Entry, "id"> = {
-      userId: body.userId,
+      userId,
       type: body.type,
       source: body.source || (body.improvedText ? "improved" : "raw"),
       rawText: body.rawText,
