@@ -6,6 +6,7 @@ import UrlSummarizer from "@/components/UrlSummarizer";
 import EntryHistory from "@/components/EntryHistory";
 import LoginButton from "@/components/LoginButton";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useToast } from "@/lib/toast/ToastContext";
 
 type ViewMode = "capture" | "url" | "history";
 
@@ -13,6 +14,7 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("capture");
   const [isLoading, setIsLoading] = useState(false);
   const { user, loading: authLoading } = useAuth();
+  const { showToast } = useToast();
 
   const handleImprove = async (text: string): Promise<string> => {
     const response = await fetch("/api/entries/improve", {
@@ -98,12 +100,11 @@ export default function Home() {
       const result = await response.json();
       console.log("Entry saved successfully:", result);
 
-      // Show success toast (simplified)
-      alert("Saved! · " + new Date().toLocaleTimeString());
+      showToast("Saved! · " + new Date().toLocaleTimeString(), "success");
     } catch (error) {
       console.error("Error saving entry:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to save entry. Please try again.";
-      alert(errorMessage);
+      showToast(errorMessage, "error");
     } finally {
       setIsLoading(false);
     }
@@ -149,10 +150,10 @@ export default function Home() {
         throw new Error(data.error || "Failed to save URL");
       }
 
-      alert("Saved! · " + new Date().toLocaleTimeString());
+      showToast("Saved! · " + new Date().toLocaleTimeString(), "success");
     } catch (error) {
       console.error("Error saving URL:", error);
-      alert("Failed to save URL. Please try again.");
+      showToast("Failed to save URL. Please try again.", "error");
     } finally {
       setIsLoading(false);
     }

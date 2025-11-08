@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, KeyboardEvent } from "react";
+import { useToast } from "@/lib/toast/ToastContext";
 
 interface CaptureFormProps {
   onSave: (
@@ -32,6 +33,7 @@ export default function CaptureForm({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { showToast } = useToast();
 
   const handleImprove = async () => {
     if (!text.trim() || !onImprove) return;
@@ -43,7 +45,7 @@ export default function CaptureForm({
       setShowPreview(true);
     } catch (error) {
       console.error("Error improving text:", error);
-      alert("Failed to improve text. Please try again.");
+      showToast("Failed to improve text. Please try again.", "error");
     } finally {
       setIsImproving(false);
     }
@@ -53,11 +55,11 @@ export default function CaptureForm({
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith("image/")) {
-        alert("Please select an image file");
+        showToast("Please select an image file", "error");
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        alert("Image size must be less than 10MB");
+        showToast("Image size must be less than 10MB", "error");
         return;
       }
       setSelectedImage(file);
@@ -80,12 +82,12 @@ export default function CaptureForm({
 
   const handleSave = async (source: "raw" | "improved" | "both") => {
     if (source === "improved" && !improvedText) {
-      alert("No improved text available. Please improve first.");
+      showToast("No improved text available. Please improve first.", "error");
       return;
     }
 
     if (source === "both" && !improvedText) {
-      alert("No improved text available. Please improve first.");
+      showToast("No improved text available. Please improve first.", "error");
       return;
     }
 
@@ -115,7 +117,7 @@ export default function CaptureForm({
         imageMetadata = data.metadata;
       } catch (error) {
         console.error("Error uploading image:", error);
-        alert("Failed to upload image. Please try again.");
+        showToast("Failed to upload image. Please try again.", "error");
         setIsUploadingImage(false);
         return;
       }
