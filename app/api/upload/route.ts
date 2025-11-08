@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
     const storagePath = `entries/${fileName}`;
 
     // Upload to Firebase Storage
-    const bucket = adminStorage.bucket();
+    // Use the specific bucket: wisper-vivek.firebasestorage.app
+    const bucket = adminStorage.bucket("wisper-vivek.firebasestorage.app");
     const fileRef = bucket.file(storagePath);
 
     await fileRef.save(buffer, {
