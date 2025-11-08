@@ -8,9 +8,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies with npm cache mounted at global location
-RUN --mount=type=cache,id=s/wisper-npm-cache,target=/root/.npm \
-    npm ci --prefer-offline
+# Install dependencies
+RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -20,9 +19,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build with Next.js cache mounted (not node_modules/.cache)
-RUN --mount=type=cache,id=s/wisper-next-cache,target=/app/.next/cache \
-    npm run build
+# Build Next.js app
+RUN npm run build
 
 # Production image
 FROM base AS runner
