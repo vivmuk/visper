@@ -168,19 +168,21 @@ export default function Home() {
 
   if (!user) {
     return (
-      <main className="min-h-screen p-4 md:p-8 bg-white">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-8">
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center px-4">
+        <div className="max-w-2xl w-full text-center space-y-8">
+          <div>
             <h1 className="text-4xl md:text-5xl font-bold mb-2">Whisper</h1>
             <p className="text-lg text-gray-600">
               A thoughtful journal that thinks with you.
             </p>
           </div>
-          <div className="mt-12 text-center">
+          <div>
             <p className="text-xl text-gray-700 mb-6">
               Sign in to start journaling
             </p>
-            <LoginButton />
+            <div className="flex justify-center">
+              <LoginButton />
+            </div>
           </div>
         </div>
       </main>
