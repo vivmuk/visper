@@ -41,6 +41,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verify Firebase Admin is initialized
+    try {
+      // Test Firebase connection by accessing adminDb
+      const testCollection = adminDb.collection("entries");
+      console.log("Firebase Admin initialized successfully");
+    } catch (firebaseError) {
+      console.error("Firebase Admin initialization error:", firebaseError);
+      return NextResponse.json(
+        {
+          error: "Firebase Admin not configured. Check environment variables.",
+          details: firebaseError instanceof Error ? firebaseError.message : "Unknown error",
+        },
+        { status: 500 }
+      );
+    }
+
     // Create entry document
     const entryData: Omit<Entry, "id"> = {
       userId: body.userId,
@@ -60,7 +76,9 @@ export async function POST(request: NextRequest) {
       imageMetadata: body.imageMetadata,
     };
 
+    console.log("Attempting to save entry to Firestore...");
     const docRef = await adminDb.collection("entries").add(entryData);
+    console.log("Entry saved successfully with ID:", docRef.id);
 
     // Fetch the created document to return it
     const doc = await docRef.get();
@@ -69,9 +87,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: doc.id, entry });
   } catch (error) {
     console.error("Error creating entry:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to create entry";
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    console.error("Error details:", {
+      message: errorMessage,
+      stack: errorStack,
+      name: error instanceof Error ? error.name : "Unknown",
+    });
+
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to create entry",
+        error: errorMessage,
+        details: process.env.NODE_ENV === "development" ? errorStack : undefined,
       },
       { status: 500 }
     );

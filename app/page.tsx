@@ -80,14 +80,21 @@ export default function Home() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "Failed to save entry");
+        const errorMsg = data.error || "Failed to save entry";
+        const details = data.details ? `\n\nDetails: ${data.details}` : "";
+        console.error("API Error:", data);
+        throw new Error(errorMsg + details);
       }
+
+      const result = await response.json();
+      console.log("Entry saved successfully:", result);
 
       // Show success toast (simplified)
       alert("Saved! · " + new Date().toLocaleTimeString());
     } catch (error) {
       console.error("Error saving entry:", error);
-      alert("Failed to save entry. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Failed to save entry. Please try again.";
+      alert(errorMessage);
     } finally {
       setIsLoading(false);
     }
