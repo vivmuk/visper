@@ -4,12 +4,15 @@ import { useState } from "react";
 import CaptureForm from "@/components/CaptureForm";
 import UrlSummarizer from "@/components/UrlSummarizer";
 import EntryHistory from "@/components/EntryHistory";
+import LoginButton from "@/components/LoginButton";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 type ViewMode = "capture" | "url" | "history";
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("capture");
   const [isLoading, setIsLoading] = useState(false);
+  const { user, loading: authLoading } = useAuth();
 
   const handleImprove = async (text: string): Promise<string> => {
     const response = await fetch("/api/entries/improve", {
@@ -42,8 +45,10 @@ export default function Home() {
   ) => {
     setIsLoading(true);
     try {
-      // TODO: Get userId from auth context
-      const userId = "temp-user-id"; // Temporary - will be replaced with real auth
+      if (!user) {
+        throw new Error("You must be signed in to save entries");
+      }
+      const userId = user.uid;
 
       const payload: any = {
         userId,
@@ -70,10 +75,14 @@ export default function Home() {
         payload.imageMetadata = imageMetadata;
       }
 
+      // Get Firebase ID token for authentication
+      const idToken = await user.getIdToken();
+      
       const response = await fetch("/api/entries", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify(payload),
       });
@@ -103,13 +112,19 @@ export default function Home() {
   const handleSaveUrl = async (url: string, summary: any) => {
     setIsLoading(true);
     try {
-      // TODO: Get userId from auth context
-      const userId = "temp-user-id";
+      if (!user) {
+        throw new Error("You must be signed in to save entries");
+      }
+      const userId = user.uid;
 
+      // Get Firebase ID token for authentication
+      const idToken = await user.getIdToken();
+      
       const response = await fetch("/api/entries", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
           userId,
@@ -143,15 +158,47 @@ export default function Home() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <main className="min-h-screen p-4 md:p-8 bg-white flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="min-h-screen p-4 md:p-8 bg-white">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-4xl md:text-5xl font-bold mb-2">Whisper</h1>
+            <p className="text-lg text-gray-600">
+              A thoughtful journal that thinks with you.
+            </p>
+          </div>
+          <div className="mt-12 text-center">
+            <p className="text-xl text-gray-700 mb-6">
+              Sign in to start journaling
+            </p>
+            <LoginButton />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-8 bg-white">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold mb-2">Whisper</h1>
-          <p className="text-lg text-gray-600">
-            A thoughtful journal that thinks with you.
-          </p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-4xl md:text-5xl font-bold mb-2">Whisper</h1>
+            <p className="text-lg text-gray-600">
+              A thoughtful journal that thinks with you.
+            </p>
+          </div>
+          <LoginButton />
         </div>
 
         {/* Mode switcher */}
@@ -198,7 +245,7 @@ export default function Home() {
         ) : viewMode === "url" ? (
           <UrlSummarizer onSave={handleSaveUrl} isLoading={isLoading} />
         ) : (
-          <EntryHistory userId="temp-user-id" />
+          <EntryHistory userId={user.uid} />
         )}
       </div>
     </main>

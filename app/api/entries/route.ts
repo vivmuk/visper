@@ -3,18 +3,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { getUserIdFromRequest } from "@/lib/auth/middleware";
 import type { CreateEntryRequest, Entry, SearchRequest } from "@/types";
 
 // POST /api/entries - Create entry
 export async function POST(request: NextRequest) {
   try {
-    // TODO: Add authentication middleware to get userId from token
-    // For now, we'll accept userId in the request body (temporary)
-    const body: CreateEntryRequest & { userId: string } = await request.json();
-
-    if (!body.userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 401 });
+    // Get userId from Firebase ID token
+    const userId = await getUserIdFromRequest(request);
+    
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Authentication required. Please sign in." },
+        { status: 401 }
+      );
     }
+
+    const body: CreateEntryRequest = await request.json();
 
     if (!body.type) {
       return NextResponse.json({ error: "type is required" }, { status: 400 });
@@ -109,13 +114,17 @@ export async function POST(request: NextRequest) {
 // GET /api/entries - List entries with filters
 export async function GET(request: NextRequest) {
   try {
-    // TODO: Add authentication middleware
-    const searchParams = request.nextUrl.searchParams;
-    const userId = searchParams.get("userId");
-
+    // Get userId from Firebase ID token
+    const userId = await getUserIdFromRequest(request);
+    
     if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Authentication required. Please sign in." },
+        { status: 401 }
+      );
     }
+
+    const searchParams = request.nextUrl.searchParams;
 
     // Build query
     let query: FirebaseFirestore.Query = adminDb

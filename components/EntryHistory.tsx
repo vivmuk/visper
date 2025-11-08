@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth/AuthContext";
 import type { Entry } from "@/types";
 
 interface EntryHistoryProps {
@@ -11,22 +12,29 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchEntries = async () => {
+      if (!user) return;
+      
       setIsLoading(true);
       setError(null);
       try {
+        // Get Firebase ID token for authentication
+        const idToken = await user.getIdToken();
+        
         // Calculate date 30 days ago
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const fromDate = thirtyDaysAgo.toISOString();
 
         const response = await fetch(
-          `/api/entries?userId=${userId}&from=${fromDate}`,
+          `/api/entries?from=${fromDate}`,
           {
             headers: {
               "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
             },
           }
         );
@@ -46,10 +54,10 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       }
     };
 
-    if (userId) {
+    if (user) {
       fetchEntries();
     }
-  }, [userId]);
+  }, [user]);
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return "Unknown date";
