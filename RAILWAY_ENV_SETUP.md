@@ -56,10 +56,28 @@ KogYBxZkOPA+/ZvrwkGhyMJXvA==
 -----END PRIVATE KEY-----
 ```
 
-**Important:** For `FIREBASE_ADMIN_PRIVATE_KEY`, you need to:
-- Copy the ENTIRE private key including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines
-- Keep the newlines (`\n`) - Railway will handle them automatically
-- Make sure there are no extra spaces
+**Important:** For `FIREBASE_ADMIN_PRIVATE_KEY`, you need to copy the private key from your service account JSON file.
+
+**How to set it correctly in Railway:**
+
+1. Open your `wisper-vivek-firebase-adminsdk-fbsvc-af4804705a.json` file
+2. Find the `"private_key"` field (it's a long string)
+3. Copy the ENTIRE value from the JSON file (including the quotes)
+4. In Railway, paste it as the value for `FIREBASE_ADMIN_PRIVATE_KEY`
+5. **Remove the surrounding quotes** - Railway will add quotes automatically
+6. The `\n` characters should remain as-is (they represent newlines)
+
+**Example format in Railway:**
+```
+-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDY6n6na+tDfHXW\na55uqQUg830f2jcni8YZsEdbcrrZGka8QknhzkwOp1SifgUBztuiSf9U4g0szBo0\n... (rest of key) ...\n-----END PRIVATE KEY-----\n
+```
+
+**Troubleshooting "Invalid PEM formatted message" error:**
+- ✅ Make sure the key starts with `-----BEGIN PRIVATE KEY-----`
+- ✅ Make sure the key ends with `-----END PRIVATE KEY-----`
+- ✅ Keep the `\n` characters (don't replace with actual line breaks)
+- ✅ Don't add extra quotes around the value
+- ✅ Don't add extra spaces at the beginning or end
 
 #### Firebase Client (Public - Already set, but verify)
 

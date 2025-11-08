@@ -32,13 +32,45 @@ function initializeFirebaseAdmin() {
       }
     } else if (process.env.FIREBASE_ADMIN_PRIVATE_KEY) {
       // Load from environment variables
-      _app = initializeApp({
-        credential: cert({
-          projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-          privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, "\n"),
-        }),
-      });
+      // Handle different newline formats that Railway might use
+      let privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+      
+      // Replace various newline representations with actual newlines
+      // Railway might store it as: \n, \\n, or actual newlines
+      privateKey = privateKey.replace(/\\n/g, "\n");
+      privateKey = privateKey.replace(/\\\\n/g, "\n");
+      
+      // Ensure the private key has proper BEGIN/END markers
+      if (!privateKey.includes("BEGIN PRIVATE KEY")) {
+        throw new Error(
+          "Private key must include BEGIN PRIVATE KEY marker. " +
+          "Make sure you copied the entire key from the JSON file."
+        );
+      }
+      if (!privateKey.includes("END PRIVATE KEY")) {
+        throw new Error(
+          "Private key must include END PRIVATE KEY marker. " +
+          "Make sure you copied the entire key from the JSON file."
+        );
+      }
+      
+      try {
+        _app = initializeApp({
+          credential: cert({
+            projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+            privateKey: privateKey,
+          }),
+        });
+      } catch (certError) {
+        console.error("Error initializing Firebase Admin with certificate:", certError);
+        throw new Error(
+          `Failed to parse private key: ${certError instanceof Error ? certError.message : "Unknown error"}. ` +
+          "Please check that FIREBASE_ADMIN_PRIVATE_KEY is set correctly in Railway. " +
+          "The key should include -----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY----- markers, " +
+          "and newlines should be represented as \\n (not actual line breaks)."
+        );
+      }
     } else {
       throw new Error(
         "Firebase Admin credentials not found. Set FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH or provide credentials via env vars."
