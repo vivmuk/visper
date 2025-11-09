@@ -101,7 +101,7 @@ export default function Home() {
       const result = await response.json();
       console.log("Entry saved successfully:", result);
 
-      showToast("Saved! · " + new Date().toLocaleTimeString(), "success");
+      showToast("Saved!!", "success");
     } catch (error) {
       console.error("Error saving entry:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to save entry. Please try again.";
@@ -151,7 +151,7 @@ export default function Home() {
         throw new Error(data.error || "Failed to save URL");
       }
 
-      showToast("Saved! · " + new Date().toLocaleTimeString(), "success");
+      showToast("Saved!!", "success");
     } catch (error) {
       console.error("Error saving URL:", error);
       showToast("Failed to save URL. Please try again.", "error");
