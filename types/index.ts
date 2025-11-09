@@ -113,6 +113,17 @@ export interface CreateEntryRequest {
   rawText?: string;
   improvedText?: string;
   url?: string;
+  // URL-specific fields
+  summary?: string;
+  keyPoints?: string[];
+  quotes?: Array<{
+    text: string;
+    locator?: string;
+  }>;
+  urlTitle?: string;
+  urlDomain?: string;
+  urlAuthor?: string;
+  urlChecksum?: string;
   imageUrl?: string;
   imageStoragePath?: string;
   imageMetadata?: {
