@@ -68,7 +68,14 @@ export async function POST(request: NextRequest) {
     try {
       if (body.type === "note" || body.type === "url") {
         // Extract metadata from text using GLM 4.6
-        const textToAnalyze = body.improvedText || body.rawText || "";
+        // For URL entries, use summary if rawText/improvedText not available
+        let textToAnalyze = body.improvedText || body.rawText || "";
+        if (body.type === "url" && !textToAnalyze && body.summary) {
+          // For URL entries, analyze the summary text along with key points
+          const keyPointsText = body.keyPoints ? "\n\nKey Points:\n" + body.keyPoints.join("\n") : "";
+          textToAnalyze = body.summary + keyPointsText;
+        }
+        
         if (textToAnalyze) {
           console.log("Extracting text metadata using GLM 4.6...");
           const textMeta = await extractTextMetadata(textToAnalyze);

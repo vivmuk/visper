@@ -119,6 +119,19 @@ export default function Home() {
       }
       const userId = user.uid;
 
+      // Format the summary text for display in history
+      // Combine summary, key points, and title for a readable entry
+      const summaryText = [
+        summary.meta.title ? `# ${summary.meta.title}` : "",
+        summary.summary,
+        summary.keyPoints && summary.keyPoints.length > 0 
+          ? `\n\nKey Points:\n${summary.keyPoints.map((point: string, idx: number) => `${idx + 1}. ${point}`).join("\n")}`
+          : "",
+        summary.quotes && summary.quotes.length > 0
+          ? `\n\nQuotes:\n${summary.quotes.map((quote: any) => `"${quote.text}"`).join("\n\n")}`
+          : "",
+      ].filter(Boolean).join("\n");
+
       // Get Firebase ID token for authentication
       const idToken = await user.getIdToken();
       
@@ -132,6 +145,9 @@ export default function Home() {
           userId,
           type: "url",
           source: "improved",
+          // Include the summary as improvedText so it displays in history
+          improvedText: summaryText,
+          rawText: summaryText, // Also include as rawText for consistency
           url,
           urlTitle: summary.meta.title,
           urlDomain: summary.meta.domain,

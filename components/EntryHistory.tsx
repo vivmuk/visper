@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useToast } from "@/lib/toast/ToastContext";
+import DeleteConfirmationDialog from "./DeleteConfirmationDialog";
 import type { Entry } from "@/types";
 
 interface EntryHistoryProps {
@@ -14,52 +16,98 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"timeline" | "tags">("timeline");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { user } = useAuth();
+  const { showToast } = useToast();
+
+  const fetchEntries = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Get Firebase ID token for authentication
+      const idToken = await user.getIdToken();
+      
+      // Calculate date 30 days ago
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const fromDate = thirtyDaysAgo.toISOString();
+
+      const response = await fetch(
+        `/api/entries?from=${fromDate}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to fetch entries");
+      }
+
+      const data = await response.json();
+      setEntries(data.entries || []);
+    } catch (err) {
+      console.error("Error fetching entries:", err);
+      setError(err instanceof Error ? err.message : "Failed to load entries");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchEntries = async () => {
-      if (!user) return;
-      
-      setIsLoading(true);
-      setError(null);
-      try {
-        // Get Firebase ID token for authentication
-        const idToken = await user.getIdToken();
-        
-        // Calculate date 30 days ago
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const fromDate = thirtyDaysAgo.toISOString();
-
-        const response = await fetch(
-          `/api/entries?from=${fromDate}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-          }
-        );
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to fetch entries");
-        }
-
-        const data = await response.json();
-        setEntries(data.entries || []);
-      } catch (err) {
-        console.error("Error fetching entries:", err);
-        setError(err instanceof Error ? err.message : "Failed to load entries");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     if (user) {
       fetchEntries();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  const handleDeleteClick = (entryId: string) => {
+    setEntryToDelete(entryId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!entryToDelete || !user) return;
+
+    setIsDeleting(true);
+    try {
+      const idToken = await user.getIdToken();
+      
+      const response = await fetch(`/api/entries/${entryToDelete}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to delete entry");
+      }
+
+      // Remove the entry from the local state
+      setEntries(entries.filter((entry) => entry.id !== entryToDelete));
+      showToast("Entry deleted successfully", "success");
+      setDeleteDialogOpen(false);
+      setEntryToDelete(null);
+    } catch (error) {
+      console.error("Error deleting entry:", error);
+      showToast(
+        error instanceof Error ? error.message : "Failed to delete entry",
+        "error"
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Group entries by tags
   const tagGroups = useMemo(() => {
@@ -253,17 +301,40 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
               <span className="text-sm text-gray-500">
                 {formatDate(entry.createdAt)}
               </span>
-              <span
-                className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                  entry.type === "note"
-                    ? "bg-teal-100 text-teal-800"
-                    : entry.type === "url"
-                    ? "bg-purple-100 text-purple-800"
-                    : "bg-pink-100 text-pink-800"
-                }`}
-              >
-                {entry.type === "note" ? "Note" : entry.type === "url" ? "URL" : "Image"}
-              </span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                    entry.type === "note"
+                      ? "bg-teal-100 text-teal-800"
+                      : entry.type === "url"
+                      ? "bg-purple-100 text-purple-800"
+                      : "bg-pink-100 text-pink-800"
+                  }`}
+                >
+                  {entry.type === "note" ? "Note" : entry.type === "url" ? "URL" : "Image"}
+                </span>
+                <button
+                  onClick={() => handleDeleteClick(entry.id)}
+                  disabled={isDeleting}
+                  className="text-red-500 hover:text-red-700 p-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Delete entry"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Image */}
@@ -413,6 +484,23 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
           </div>
         ))}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        isOpen={deleteDialogOpen}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setEntryToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        entryTitle={
+          entryToDelete
+            ? entries.find((e) => e.id === entryToDelete)?.urlTitle ||
+              entries.find((e) => e.id === entryToDelete)?.rawText?.substring(0, 50) ||
+              "this entry"
+            : undefined
+        }
+      />
     </div>
   );
 }
