@@ -62,7 +62,7 @@ export default function UrlSummarizer({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="Paste URL here..."
-          className="w-full p-4 text-lg border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full p-4 text-lg text-gray-900 watercolor-card border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 placeholder:text-gray-400"
           disabled={isLoading || isSummarizing}
           onKeyDown={(e) => {
             if (e.key === "Enter") {

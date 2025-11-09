@@ -155,12 +155,9 @@ export default function CaptureForm({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="What's on your mind?"
-          className="w-full min-h-[200px] p-4 text-lg watercolor-card border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 resize-none"
+          className="w-full min-h-[200px] p-4 text-lg text-gray-900 watercolor-card border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 resize-none placeholder:text-gray-400"
           disabled={isLoading || isImproving || isUploadingImage}
         />
-        <p className="text-sm text-gray-500 mt-2">
-          ⌘⏎ to improve
-        </p>
       </div>
 
       {/* Image upload */}
@@ -228,13 +225,13 @@ export default function CaptureForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h4 className="text-sm font-medium text-gray-600 mb-2">Raw</h4>
-              <div className="p-4 watercolor-card rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-100">
+              <div className="p-4 watercolor-card rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-100 text-gray-900">
                 {text}
               </div>
             </div>
             <div>
               <h4 className="text-sm font-medium text-gray-600 mb-2">Improved</h4>
-              <div className="p-4 bg-gradient-to-br from-teal-50 to-purple-50 rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-200">
+              <div className="p-4 bg-gradient-to-br from-teal-50 to-purple-50 rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-200 text-gray-900">
                 {improvedText}
               </div>
             </div>

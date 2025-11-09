@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import CaptureForm from "@/components/CaptureForm";
 import UrlSummarizer from "@/components/UrlSummarizer";
 import EntryHistory from "@/components/EntryHistory";
@@ -173,10 +174,13 @@ export default function Home() {
         <div className="max-w-2xl w-full text-center space-y-8">
           {/* Logo */}
           <div className="flex justify-center mb-4">
-            <img
+            <Image
               src="/logo.png"
               alt="Visper Logo"
+              width={160}
+              height={160}
               className="w-32 h-32 md:w-40 md:h-40 object-contain"
+              priority
             />
           </div>
           
@@ -245,10 +249,13 @@ export default function Home() {
         {/* Header */}
         <div className="mb-8 flex justify-between items-start">
           <div className="flex items-center gap-4">
-            <img
+            <Image
               src="/logo.png"
               alt="Visper Logo"
+              width={64}
+              height={64}
               className="w-12 h-12 md:w-16 md:h-16 object-contain"
+              priority
             />
             <div>
               <h1 className="text-3xl md:text-4xl font-bold mb-1 bg-gradient-to-r from-teal-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">

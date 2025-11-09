@@ -280,11 +280,11 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
             {/* Content */}
             <div className="mb-3">
               {entry.improvedText ? (
-                <p className="text-gray-800 leading-relaxed">{entry.improvedText}</p>
+                <p className="text-gray-900 leading-relaxed">{entry.improvedText}</p>
               ) : entry.rawText ? (
-                <p className="text-gray-800 leading-relaxed">{entry.rawText}</p>
+                <p className="text-gray-900 leading-relaxed">{entry.rawText}</p>
               ) : entry.summary ? (
-                <p className="text-gray-800 leading-relaxed">{entry.summary}</p>
+                <p className="text-gray-900 leading-relaxed">{entry.summary}</p>
               ) : null}
             </div>
 
