@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Railway works best with standard Next.js output
-  // Remove standalone for Railway deployment
+  output: 'standalone',
   images: {
     // Disable image optimization for Railway deployment
     // Railway doesn't support Next.js image optimization API by default

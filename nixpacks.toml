@@ -6,8 +6,12 @@ nixPkgs = ["nodejs-18_x", "npm-9_x"]
 cmds = ["npm install --include=dev"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = [
+  "npm run build",
+  "cp -r public .next/standalone/",
+  "cp -r .next/static .next/standalone/.next/"
+]
 
 [start]
-cmd = "npm start"
+cmd = "node .next/standalone/server.js"
 
