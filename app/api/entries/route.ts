@@ -76,18 +76,38 @@ export async function POST(request: NextRequest) {
           textToAnalyze = body.summary + keyPointsText;
         }
         
-        if (textToAnalyze) {
-          console.log("Extracting text metadata using GLM 4.6...");
-          const textMeta = await extractTextMetadata(textToAnalyze);
-          enrichedMetadata = {
-            tags: [...(body.tags || []), ...(textMeta.tags || [])], // Merge user tags with AI tags
-            entities: textMeta.entities || [],
-            topics: textMeta.topics || [],
-            keywords: textMeta.keywords || [],
-            sentiment: textMeta.sentiment,
-            category: textMeta.category,
-            aiModel: "glm-4-6",
-          };
+        if (textToAnalyze && textToAnalyze.trim().length > 0) {
+          console.log("Extracting text metadata using GLM 4.6...", { 
+            textLength: textToAnalyze.length,
+            type: body.type 
+          });
+          try {
+            const textMeta = await extractTextMetadata(textToAnalyze);
+            console.log("Successfully extracted metadata:", {
+              tagsCount: textMeta.tags?.length || 0,
+              entitiesCount: textMeta.entities?.length || 0,
+              topicsCount: textMeta.topics?.length || 0,
+            });
+            enrichedMetadata = {
+              tags: [...(body.tags || []), ...(textMeta.tags || [])], // Merge user tags with AI tags
+              entities: textMeta.entities || [],
+              topics: textMeta.topics || [],
+              keywords: textMeta.keywords || [],
+              sentiment: textMeta.sentiment,
+              category: textMeta.category,
+              aiModel: "glm-4-6",
+            };
+          } catch (extractError) {
+            console.error("Error in extractTextMetadata:", extractError);
+            throw extractError; // Re-throw to be caught by outer catch
+          }
+        } else {
+          console.log("Skipping metadata extraction - no text to analyze", {
+            hasImprovedText: !!body.improvedText,
+            hasRawText: !!body.rawText,
+            hasSummary: !!body.summary,
+            type: body.type,
+          });
         }
       } else if (body.type === "image" && body.imageUrl) {
         // Extract metadata from image using Mistral

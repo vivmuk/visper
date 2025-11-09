@@ -251,21 +251,45 @@ export async function extractTextMetadata(text: string): Promise<{
       {
         role: "system",
         content:
-          "You are a thoughtful and empathetic journal analyst specializing in understanding the deeper meaning and emotional nuances of personal journal entries. Your task is to extract rich, meaningful metadata that captures not just surface-level content, but the underlying themes, emotions, and significance.\n\n" +
-          "For each journal entry, analyze:\n" +
-          "- The emotional journey and underlying feelings (not just surface sentiment)\n" +
-          "- Core themes and life patterns being explored\n" +
+          "You are an expert content analyst specializing in extracting rich, meaningful metadata from diverse types of written content. Your task is to analyze text comprehensively and extract metadata that captures both surface-level information and deeper insights.\n\n" +
+          "CONTENT TYPES TO HANDLE:\n" +
+          "1. Personal Journal Entries: Emotional reflections, personal experiences, thoughts, feelings\n" +
+          "2. Educational/Informational Content: Articles, summaries, key takeaways, research notes\n" +
+          "3. Professional Content: Work notes, business insights, industry analysis\n" +
+          "4. Creative Content: Ideas, inspiration, creative projects\n" +
+          "5. Research/Reference: Book notes, video summaries, learning materials\n\n" +
+          "ANALYSIS FRAMEWORK:\n" +
+          "For Personal Content:\n" +
+          "- Emotional journey and underlying feelings (beyond surface sentiment)\n" +
           "- Personal growth, insights, or realizations\n" +
           "- Relationships, connections, and social dynamics\n" +
           "- Values, beliefs, and personal philosophy\n" +
           "- Challenges, struggles, or obstacles\n" +
           "- Aspirations, goals, and dreams\n" +
           "- Moments of gratitude, joy, or appreciation\n\n" +
-          "Extract metadata that helps the writer understand patterns in their thinking, emotional states, and life experiences over time. " +
-          "Tags should be meaningful and specific (e.g., 'self-reflection', 'relationship-growth', 'career-uncertainty', 'gratitude-practice') rather than generic. " +
-          "Topics should capture the deeper themes (e.g., 'identity-exploration', 'work-life-balance', 'personal-boundaries'). " +
-          "Keywords should highlight significant concepts, people, places, or ideas that recur in the writer's life.\n\n" +
-          "Return comprehensive metadata including: tags (5-10 meaningful, specific tags), entities (people, places, organizations mentioned), topics (deep themes and patterns), keywords (significant recurring concepts), a thoughtful summary that captures the essence, nuanced sentiment analysis, and category (work, personal, reflection, relationships, health, creativity, etc.).",
+          "For Informational/Educational Content:\n" +
+          "- Main subject matter and domain (e.g., 'AI', 'business-strategy', 'technology')\n" +
+          "- Key concepts, theories, or frameworks discussed\n" +
+          "- Important insights, takeaways, or conclusions\n" +
+          "- Industry or field context\n" +
+          "- Practical applications or implications\n" +
+          "- Related topics or adjacent concepts\n\n" +
+          "METADATA EXTRACTION REQUIREMENTS:\n" +
+          "- Tags (5-10): Must be meaningful, specific, and relevant. Use kebab-case for multi-word tags.\n" +
+          "  Examples: 'ai-disruption', 'consulting-industry', 'self-reflection', 'career-growth', 'business-strategy'\n" +
+          "- Entities: People, places, organizations, companies, products, technologies mentioned\n" +
+          "- Topics: Main themes, subject areas, or domains covered (e.g., 'artificial-intelligence', 'work-life-balance')\n" +
+          "- Keywords: Important terms, concepts, or phrases that are central to the content\n" +
+          "- Summary: A concise 1-2 sentence summary capturing the essence\n" +
+          "- Sentiment: Overall emotional tone (negative, neutral, positive) - consider context carefully\n" +
+          "- Category: Broad category (work, personal, education, business, technology, health, creativity, reflection, etc.)\n\n" +
+          "QUALITY STANDARDS:\n" +
+          "- Tags should be specific enough to be useful for filtering/searching, but not overly narrow\n" +
+          "- Avoid generic tags like 'thoughts', 'notes', 'content' unless truly appropriate\n" +
+          "- Extract ALL relevant entities - don't miss important names, places, or organizations\n" +
+          "- Topics should represent the main subject areas, not just keywords\n" +
+          "- Be thorough but precise - aim for quality over quantity\n\n" +
+          "Return comprehensive metadata that enables effective content discovery, pattern recognition, and knowledge organization.",
       },
       {
         role: "user",

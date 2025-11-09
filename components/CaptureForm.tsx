@@ -154,8 +154,25 @@ export default function CaptureForm({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={(e) => {
+            // Preserve formatting when pasting
+            e.preventDefault();
+            const pastedText = e.clipboardData.getData('text/plain');
+            const start = textareaRef.current?.selectionStart || 0;
+            const end = textareaRef.current?.selectionEnd || 0;
+            const newText = text.substring(0, start) + pastedText + text.substring(end);
+            setText(newText);
+            // Set cursor position after paste
+            setTimeout(() => {
+              if (textareaRef.current) {
+                const newPosition = start + pastedText.length;
+                textareaRef.current.setSelectionRange(newPosition, newPosition);
+                textareaRef.current.focus();
+              }
+            }, 0);
+          }}
           placeholder="What's on your mind?"
-          className="w-full min-h-[200px] p-4 text-lg text-gray-900 watercolor-card border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 resize-none placeholder:text-gray-400"
+          className="w-full min-h-[200px] p-4 text-lg text-gray-900 watercolor-card border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 resize-none placeholder:text-gray-400 whitespace-pre-wrap"
           disabled={isLoading || isImproving || isUploadingImage}
         />
       </div>
