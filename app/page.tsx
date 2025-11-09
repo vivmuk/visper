@@ -169,17 +169,66 @@ export default function Home() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-white flex flex-col items-center justify-center px-4">
+      <main className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
         <div className="max-w-2xl w-full text-center space-y-8">
+          {/* Logo */}
+          <div className="flex justify-center mb-4">
+            <img
+              src="/logo.png"
+              alt="Visper Logo"
+              className="w-32 h-32 md:w-40 md:h-40 object-contain"
+            />
+          </div>
+          
+          {/* Title and Tagline */}
           <div>
-            <h1 className="text-4xl md:text-5xl font-bold mb-2">Whisper</h1>
-            <p className="text-lg text-gray-600">
+            <h1 className="text-5xl md:text-6xl font-bold mb-3 bg-gradient-to-r from-teal-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+              Visper
+            </h1>
+            <p className="text-xl md:text-2xl text-gray-700 font-light">
               A thoughtful journal that thinks with you.
             </p>
           </div>
+
+          {/* Features */}
+          <div className="watercolor-card rounded-2xl p-8 space-y-4 text-left">
+            <h2 className="text-2xl font-semibold text-gray-800 mb-4 text-center">What makes Visper special</h2>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">✨</div>
+                <div>
+                  <p className="font-medium text-gray-800">AI-Powered Insights</p>
+                  <p className="text-sm text-gray-600">Get deeper understanding of your thoughts with intelligent analysis</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">🏷️</div>
+                <div>
+                  <p className="font-medium text-gray-800">Smart Tagging</p>
+                  <p className="text-sm text-gray-600">Automatically discover patterns and themes in your journal entries</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">📝</div>
+                <div>
+                  <p className="font-medium text-gray-800">Thoughtful Writing</p>
+                  <p className="text-sm text-gray-600">Improve and refine your journal entries while preserving your voice</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">🔍</div>
+                <div>
+                  <p className="font-medium text-gray-800">Rich Search</p>
+                  <p className="text-sm text-gray-600">Find entries by tags, topics, sentiment, and more</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sign In */}
           <div>
-            <p className="text-xl text-gray-700 mb-6">
-              Sign in to start journaling
+            <p className="text-xl text-gray-700 mb-6 font-medium">
+              Sign in to start your journaling journey
             </p>
             <div className="flex justify-center">
               <LoginButton />
@@ -191,47 +240,56 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen p-4 md:p-8 bg-white">
+    <main className="min-h-screen p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8 flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl md:text-5xl font-bold mb-2">Whisper</h1>
-            <p className="text-lg text-gray-600">
-              A thoughtful journal that thinks with you.
-            </p>
+          <div className="flex items-center gap-4">
+            <img
+              src="/logo.png"
+              alt="Visper Logo"
+              className="w-12 h-12 md:w-16 md:h-16 object-contain"
+            />
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold mb-1 bg-gradient-to-r from-teal-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+                Visper
+              </h1>
+              <p className="text-sm md:text-base text-gray-600">
+                A thoughtful journal that thinks with you.
+              </p>
+            </div>
           </div>
           <LoginButton />
         </div>
 
         {/* Mode switcher */}
-        <div className="flex gap-2 mb-6 border-b">
+        <div className="flex gap-2 mb-6 border-b border-teal-200">
           <button
             onClick={() => setViewMode("capture")}
-            className={`px-4 py-2 font-medium ${
+            className={`px-4 py-2 font-medium transition-colors ${
               viewMode === "capture"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-600 hover:text-gray-900"
+                ? "border-b-2 border-teal-500 text-teal-600"
+                : "text-gray-600 hover:text-teal-600"
             }`}
           >
             Write
           </button>
           <button
             onClick={() => setViewMode("url")}
-            className={`px-4 py-2 font-medium ${
+            className={`px-4 py-2 font-medium transition-colors ${
               viewMode === "url"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-600 hover:text-gray-900"
+                ? "border-b-2 border-teal-500 text-teal-600"
+                : "text-gray-600 hover:text-teal-600"
             }`}
           >
             URL
           </button>
           <button
             onClick={() => setViewMode("history")}
-            className={`px-4 py-2 font-medium ${
+            className={`px-4 py-2 font-medium transition-colors ${
               viewMode === "history"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-600 hover:text-gray-900"
+                ? "border-b-2 border-teal-500 text-teal-600"
+                : "text-gray-600 hover:text-teal-600"
             }`}
           >
             History

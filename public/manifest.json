@@ -1,11 +1,11 @@
 {
-  "name": "Whisper",
-  "short_name": "Whisper",
+  "name": "Visper",
+  "short_name": "Visper",
   "description": "A thoughtful journal that thinks with you.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff"
+  "background_color": "#e8f4f8",
+  "theme_color": "#7fb3d3"
 }
 
 

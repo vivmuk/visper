@@ -3,26 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Watercolor theme colors from logo */
+  --background: #f8f9fa;
+  --foreground: #1a3a52;
+  --teal-blue: #7fb3d3;
+  --lavender-pink: #d4a5c7;
+  --dark-blue: #1a3a52;
+  --light-blue: #a8d5e2;
+  --purple: #b19cd9;
+  --gold: #d4af37;
+  --green: #a8c5a0;
+  --watercolor-bg: linear-gradient(180deg, #e8f4f8 0%, #f5e8f0 100%);
 }
 
 body {
   color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--watercolor-bg);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Montserrat', sans-serif;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+  
+  .watercolor-gradient {
+    background: linear-gradient(180deg, #e8f4f8 0%, #f5e8f0 100%);
+  }
+  
+  .watercolor-card {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(122, 179, 211, 0.15);
   }
 }
 

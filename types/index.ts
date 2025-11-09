@@ -1,4 +1,4 @@
-// Core data types for Whisper journal app
+// Core data types for Visper journal app
 
 export type EntryType = "note" | "url" | "image";
 export type EntrySource = "raw" | "improved" | "both";

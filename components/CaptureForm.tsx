@@ -155,7 +155,7 @@ export default function CaptureForm({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="What's on your mind?"
-          className="w-full min-h-[200px] p-4 text-lg border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          className="w-full min-h-[200px] p-4 text-lg watercolor-card border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 resize-none"
           disabled={isLoading || isImproving || isUploadingImage}
         />
         <p className="text-sm text-gray-500 mt-2">
@@ -176,14 +176,14 @@ export default function CaptureForm({
         />
         <label
           htmlFor="image-upload"
-          className="inline-block px-4 py-2 bg-gray-100 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-block px-4 py-2 bg-gradient-to-r from-teal-50 to-purple-50 text-gray-700 rounded-lg cursor-pointer hover:from-teal-100 hover:to-purple-100 border border-teal-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           📷 {selectedImage ? "Change Image" : "Add Image"}
         </label>
         {selectedImage && (
           <button
             onClick={handleRemoveImage}
-            className="ml-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+            className="ml-2 px-4 py-2 bg-pink-100 text-pink-700 rounded-lg hover:bg-pink-200 border border-pink-200 transition-colors"
           >
             Remove
           </button>
@@ -196,7 +196,7 @@ export default function CaptureForm({
           <img
             src={imagePreview}
             alt="Preview"
-            className="max-w-full max-h-64 rounded-lg border border-gray-300"
+            className="max-w-full max-h-64 rounded-xl border border-teal-200 shadow-sm"
           />
         </div>
       )}
@@ -207,7 +207,7 @@ export default function CaptureForm({
           <button
             onClick={handleImprove}
             disabled={!text.trim() || isImproving || isLoading}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-3 bg-gradient-to-r from-teal-500 to-purple-500 text-white rounded-lg font-medium hover:from-teal-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md"
           >
             {isImproving ? "Improving..." : "Improve"}
           </button>
@@ -215,7 +215,7 @@ export default function CaptureForm({
         <button
           onClick={() => handleSave("raw")}
           disabled={(!text.trim() && !selectedImage) || isLoading || isUploadingImage}
-          className="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg font-medium hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="px-6 py-3 bg-gradient-to-r from-teal-50 to-purple-50 text-gray-800 rounded-lg font-medium hover:from-teal-100 hover:to-purple-100 border border-teal-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
           {isUploadingImage ? "Uploading..." : "Save Raw"}
         </button>
@@ -228,13 +228,13 @@ export default function CaptureForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h4 className="text-sm font-medium text-gray-600 mb-2">Raw</h4>
-              <div className="p-4 bg-gray-50 rounded-lg min-h-[150px] whitespace-pre-wrap">
+              <div className="p-4 watercolor-card rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-100">
                 {text}
               </div>
             </div>
             <div>
               <h4 className="text-sm font-medium text-gray-600 mb-2">Improved</h4>
-              <div className="p-4 bg-blue-50 rounded-lg min-h-[150px] whitespace-pre-wrap">
+              <div className="p-4 bg-gradient-to-br from-teal-50 to-purple-50 rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-200">
                 {improvedText}
               </div>
             </div>
@@ -250,7 +250,7 @@ export default function CaptureForm({
             <button
               onClick={() => handleSave("both")}
               disabled={isLoading || isUploadingImage}
-              className="px-6 py-3 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 transition-all shadow-md"
             >
               {isUploadingImage ? "Uploading..." : "Save Both"}
             </button>

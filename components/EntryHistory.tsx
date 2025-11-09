@@ -170,20 +170,20 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
                 setViewMode("timeline");
                 setSelectedTag(null);
               }}
-              className={`px-3 py-1 text-sm rounded ${
+              className={`px-3 py-1 text-sm rounded transition-colors ${
                 viewMode === "timeline"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-600 hover:bg-gray-100"
+                  ? "bg-gradient-to-r from-teal-500 to-purple-500 text-white"
+                  : "text-gray-600 hover:bg-teal-50"
               }`}
             >
               Timeline
             </button>
             <button
               onClick={() => setViewMode("tags")}
-              className={`px-3 py-1 text-sm rounded ${
+              className={`px-3 py-1 text-sm rounded transition-colors ${
                 viewMode === "tags"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-600 hover:bg-gray-100"
+                  ? "bg-gradient-to-r from-teal-500 to-purple-500 text-white"
+                  : "text-gray-600 hover:bg-teal-50"
               }`}
             >
               Tags
@@ -209,8 +209,8 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
                 }}
                 className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
                   selectedTag === tag
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    ? "bg-gradient-to-r from-teal-500 to-purple-500 text-white shadow-md"
+                    : "bg-gradient-to-r from-teal-50 to-purple-50 text-gray-700 hover:from-teal-100 hover:to-purple-100 border border-teal-200"
                 }`}
               >
                 #{tag} ({count})
@@ -229,7 +229,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       {selectedTag && (
         <div className="mb-4 flex items-center gap-2">
           <span className="text-sm text-gray-600">Filtered by:</span>
-          <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+          <span className="px-3 py-1 bg-gradient-to-r from-teal-100 to-purple-100 text-teal-800 rounded-full text-sm font-medium border border-teal-200">
             #{selectedTag}
           </span>
           <button
@@ -246,7 +246,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
         {(selectedTag ? filteredEntries : entries).map((entry) => (
           <div
             key={entry.id}
-            className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition-shadow"
+            className="watercolor-card rounded-xl p-5 border border-teal-100 hover:border-teal-200 transition-all"
           >
             {/* Header with date and type */}
             <div className="flex items-center justify-between mb-3">
@@ -256,10 +256,10 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
               <span
                 className={`text-xs font-semibold px-2 py-1 rounded-full ${
                   entry.type === "note"
-                    ? "bg-blue-100 text-blue-800"
+                    ? "bg-teal-100 text-teal-800"
                     : entry.type === "url"
-                    ? "bg-green-100 text-green-800"
-                    : "bg-purple-100 text-purple-800"
+                    ? "bg-purple-100 text-purple-800"
+                    : "bg-pink-100 text-pink-800"
                 }`}
               >
                 {entry.type === "note" ? "Note" : entry.type === "url" ? "URL" : "Image"}
@@ -370,9 +370,10 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
               </div>
             )}
 
-            {/* Tags */}
-            {entry.tags && entry.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-3">
+            {/* Tags - Always show if they exist */}
+            {entry.tags && Array.isArray(entry.tags) && entry.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-teal-100">
+                <span className="text-xs font-medium text-gray-500 mr-1">Tags:</span>
                 {entry.tags.map((tag, idx) => (
                   <button
                     key={idx}
@@ -380,11 +381,15 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
                       setSelectedTag(tag);
                       setViewMode("timeline");
                     }}
-                    className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full hover:bg-gray-200 transition-colors cursor-pointer"
+                    className="text-xs bg-gradient-to-r from-teal-100 to-purple-100 text-teal-700 px-3 py-1 rounded-full hover:from-teal-200 hover:to-purple-200 transition-all cursor-pointer border border-teal-200"
                   >
                     #{tag}
                   </button>
                 ))}
+              </div>
+            ) : (
+              <div className="mt-4 pt-3 border-t border-teal-100">
+                <span className="text-xs text-gray-400 italic">No tags yet</span>
               </div>
             )}
 

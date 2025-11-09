@@ -1,10 +1,10 @@
 "use client";
 
 import { useAuth } from "@/lib/auth/AuthContext";
-import { User } from "firebase/auth";
+import UserMenu from "./UserMenu";
 
 export default function LoginButton() {
-  const { user, loading, signInWithGoogle, logout } = useAuth();
+  const { user, loading, signInWithGoogle } = useAuth();
 
   if (loading) {
     return (
@@ -15,34 +15,13 @@ export default function LoginButton() {
   }
 
   if (user) {
-    return (
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          {user.photoURL && (
-            <img
-              src={user.photoURL}
-              alt={user.displayName || "User"}
-              className="w-8 h-8 rounded-full"
-            />
-          )}
-          <span className="text-sm text-gray-700">
-            {user.displayName || user.email}
-          </span>
-        </div>
-        <button
-          onClick={logout}
-          className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50"
-        >
-          Sign Out
-        </button>
-      </div>
-    );
+    return <UserMenu />;
   }
 
   return (
     <button
       onClick={signInWithGoogle}
-      className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-2 shadow-sm"
+      className="px-6 py-3 bg-white text-gray-700 border-2 border-teal-300 rounded-lg hover:bg-teal-50 hover:border-teal-400 flex items-center gap-3 shadow-sm transition-all font-medium"
     >
       <svg className="w-5 h-5" viewBox="0 0 24 24">
         <path
