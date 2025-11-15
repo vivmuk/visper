@@ -950,7 +950,7 @@ function buildSidebarNavigation(groups: YearGroup[]) {
 }
 
 function getEntryDate(entry: ExportableEntry) {
-  const timestamp = entry.createdAt;
+  const timestamp = entry.createdAt as any;
   try {
     if (!timestamp) {
       return new Date(0);
