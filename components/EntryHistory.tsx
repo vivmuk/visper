@@ -19,6 +19,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -106,6 +107,43 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       );
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleDownloadExport = async () => {
+    if (!user) return;
+    setIsExporting(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/entries/export", {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to generate export");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `visper-history-${new Date().toISOString().split("T")[0]}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast("Download started!", "success");
+    } catch (error) {
+      console.error("Error exporting history:", error);
+      showToast(
+        error instanceof Error ? error.message : "Failed to download history",
+        "error"
+      );
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -207,11 +245,11 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
   return (
     <div className="space-y-4">
       {/* Header with view toggle */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <h2 className="text-2xl font-semibold">
           {selectedTag ? `Tag: ${selectedTag}` : "Last 30 Days"}
         </h2>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap justify-end">
           <div className="flex gap-2 border rounded-lg p-1">
             <button
               onClick={() => {
@@ -240,6 +278,13 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
           <span className="text-sm text-gray-500">
             {selectedTag ? filteredEntries.length : entries.length} entries
           </span>
+          <button
+            onClick={handleDownloadExport}
+            disabled={isExporting}
+            className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isExporting ? "Preparing..." : "Download HTML"}
+          </button>
         </div>
       </div>
 
