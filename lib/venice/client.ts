@@ -68,8 +68,21 @@ export async function callVeniceAPI(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Venice API error: ${response.status} - ${error}`);
+    const errorText = await response.text();
+    // Try to extract a meaningful error message
+    let errorMessage = `Venice API error: ${response.status}`;
+    if (errorText && !errorText.includes("<!DOCTYPE html>")) {
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+      } catch {
+        // If not JSON, use first 200 chars of error text
+        errorMessage = errorText.length > 200 ? errorText.substring(0, 200) + "..." : errorText;
+      }
+    } else if (response.status === 500) {
+      errorMessage = "Venice API is temporarily unavailable. Please try again in a few minutes.";
+    }
+    throw new Error(errorMessage);
   }
 
   return response.json();
@@ -84,7 +97,7 @@ export async function improveEntry(rawText: string): Promise<{
   sentiment: "negative" | "neutral" | "positive";
 }> {
   const request: VeniceChatRequest = {
-    model: "venice-uncensored", // Using the model that supports response schema
+    model: "mistral-31-24b", // Using Mistral 31 24B model for improved reliability
     messages: [
       {
         role: "system",
@@ -162,7 +175,7 @@ export async function summarizeUrl(
   tags: string[];
 }> {
   const request: VeniceChatRequest = {
-    model: "venice-uncensored",
+    model: "mistral-31-24b",
     messages: [
       {
         role: "system",
@@ -235,7 +248,7 @@ export async function summarizeUrl(
   };
 }
 
-// Extract enriched metadata from text using GLM 4.6
+// Extract enriched metadata from text using Mistral
 export async function extractTextMetadata(text: string): Promise<{
   tags: string[];
   entities: string[];
@@ -246,7 +259,7 @@ export async function extractTextMetadata(text: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: "glm-4-6", // GLM 4.6 model for text analysis
+    model: "mistral-31-24b", // Mistral 31 24B model for text analysis
     messages: [
       {
         role: "system",
@@ -375,7 +388,7 @@ export async function extractImageMetadata(imageUrl: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: "mistral-large-latest", // Mistral model for image analysis
+    model: "mistral-31-24b", // Mistral 31 24B model for image analysis
     messages: [
       {
         role: "system",
