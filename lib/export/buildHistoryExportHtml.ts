@@ -415,6 +415,20 @@ export function buildHistoryExportHtml(
         margin-top: 1rem;
         color: var(--deep-slate);
       }
+      .entry-image {
+        margin-top: 1rem;
+        border-radius: 0.75rem;
+        overflow: hidden;
+        border: 1px solid rgba(15, 23, 42, 0.1);
+        box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+      }
+      .entry-image img {
+        width: 100%;
+        height: auto;
+        display: block;
+        max-width: 100%;
+        object-fit: contain;
+      }
       .nav-toggle {
         display: none;
         position: fixed;
@@ -826,6 +840,7 @@ function buildEntryCard(entry: ExportableEntry) {
     entry.summary,
     entry.rawText,
     entry.improvedText,
+    entry.imageDescription,
     tags.join(" "),
   ]
     .filter(Boolean)
@@ -851,6 +866,13 @@ function buildEntryCard(entry: ExportableEntry) {
         ? `<h4 class="entry-title"><a href="${entry.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(
             entry.urlTitle || entry.url
           )}</a></h4>`
+        : ""
+    }
+    ${
+      entry.imageUrl
+        ? `<div class="entry-image">
+            <img src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(entry.imageDescription || "Image")}" loading="lazy" />
+          </div>`
         : ""
     }
     <div class="entry-content">${escapeHtml(content)}</div>
