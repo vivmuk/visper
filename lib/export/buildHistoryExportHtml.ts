@@ -27,7 +27,8 @@ const SENTIMENTS = ["positive", "neutral", "negative"] as const;
 
 export function buildHistoryExportHtml(
   entries: ExportableEntry[],
-  exportDate: Date
+  exportDate: Date,
+  includeImages: boolean = true
 ): string {
   const grouped = groupEntriesByYearMonth(entries);
   const tagStats = collectTagStats(entries);
@@ -43,7 +44,7 @@ export function buildHistoryExportHtml(
     entries.length,
     tagStats.sorted.map((item) => item.tag)
   );
-  const timeline = buildTimeline(grouped);
+  const timeline = buildTimeline(grouped, includeImages);
   const navigation = buildSidebarNavigation(grouped);
 
   return `<!DOCTYPE html>
@@ -785,7 +786,7 @@ function buildFiltersSection(totalEntries: number, tags: string[]) {
   </section>`;
 }
 
-function buildTimeline(groups: YearGroup[]) {
+function buildTimeline(groups: YearGroup[], includeImages: boolean) {
   if (!groups.length) {
     return `<div class="month-group">
       <p style="margin:0;">No entries yet. Capture your first thought from Visper to see it appear here.</p>
@@ -807,7 +808,7 @@ function buildTimeline(groups: YearGroup[]) {
               month.entries.length === 1 ? "y" : "ies"
             }</span>
               </div>
-              ${month.entries.map(buildEntryCard).join("")}
+              ${month.entries.map((entry) => buildEntryCard(entry, includeImages)).join("")}
             </section>
           `
           )
@@ -817,7 +818,7 @@ function buildTimeline(groups: YearGroup[]) {
     .join("");
 }
 
-function buildEntryCard(entry: ExportableEntry) {
+function buildEntryCard(entry: ExportableEntry, includeImages: boolean = true) {
   const date = getEntryDate(entry);
   const formattedDate = readableDateFormatter.format(date);
   const shortDate = dateBadgeFormatter.format(date);
@@ -869,9 +870,14 @@ function buildEntryCard(entry: ExportableEntry) {
         : ""
     }
     ${
-      entry.imageUrl
+      entry.imageUrl && includeImages
         ? `<div class="entry-image">
             <img src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(entry.imageDescription || "Image")}" loading="lazy" />
+          </div>`
+        : entry.imageUrl && !includeImages
+        ? `<div class="entry-image-placeholder" style="background: linear-gradient(135deg, #f0f9ff 0%, #faf5ff 100%); border: 2px dashed #a855f7; border-radius: 0.75rem; padding: 2rem; text-align: center; color: #7c3aed; margin-top: 1rem;">
+            <span style="font-size: 2rem;">🖼️</span>
+            <p style="margin: 0.5rem 0 0;">Image not included in export</p>
           </div>`
         : ""
     }

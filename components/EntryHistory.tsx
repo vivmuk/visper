@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useToast } from "@/lib/toast/ToastContext";
 import DeleteConfirmationDialog from "./DeleteConfirmationDialog";
@@ -10,8 +10,16 @@ interface EntryHistoryProps {
   userId: string;
 }
 
+interface MonthGroup {
+  key: string;
+  label: string;
+  year: number;
+  month: number;
+  entries: Entry[];
+}
+
 export default function EntryHistory({ userId }: EntryHistoryProps) {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [allEntries, setAllEntries] = useState<Entry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -20,25 +28,24 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [includeImagesInExport, setIncludeImagesInExport] = useState(true);
+  const [showExportOptions, setShowExportOptions] = useState(false);
+  const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
+  const monthRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const { user } = useAuth();
   const { showToast } = useToast();
 
-  const fetchEntries = async () => {
+  const fetchAllEntries = async () => {
     if (!user) return;
     
     setIsLoading(true);
     setError(null);
     try {
-      // Get Firebase ID token for authentication
       const idToken = await user.getIdToken();
       
-      // Calculate date 30 days ago
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const fromDate = thirtyDaysAgo.toISOString();
-
+      // Fetch all entries without date filter, with higher limit
       const response = await fetch(
-        `/api/entries?from=${fromDate}`,
+        `/api/entries?limit=1000`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -53,7 +60,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       }
 
       const data = await response.json();
-      setEntries(data.entries || []);
+      setAllEntries(data.entries || []);
     } catch (err) {
       console.error("Error fetching entries:", err);
       setError(err instanceof Error ? err.message : "Failed to load entries");
@@ -64,10 +71,51 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
 
   useEffect(() => {
     if (user) {
-      fetchEntries();
+      fetchAllEntries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Group entries by month
+  const monthGroups = useMemo(() => {
+    const groups: Map<string, MonthGroup> = new Map();
+    
+    allEntries.forEach((entry) => {
+      const date = getEntryDate(entry);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const key = `${year}-${String(month + 1).padStart(2, "0")}`;
+      const label = date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      
+      if (!groups.has(key)) {
+        groups.set(key, { key, label, year, month, entries: [] });
+      }
+      groups.get(key)!.entries.push(entry);
+    });
+    
+    // Sort by date descending
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+  }, [allEntries]);
+
+  // Set default selected month to the most recent
+  useEffect(() => {
+    if (monthGroups.length > 0 && !selectedMonthKey) {
+      setSelectedMonthKey(monthGroups[0].key);
+    }
+  }, [monthGroups, selectedMonthKey]);
+
+  // Get entries for display based on filters
+  const entries = useMemo(() => {
+    if (selectedTag) {
+      return allEntries.filter(
+        (entry) => entry.tags && entry.tags.includes(selectedTag)
+      );
+    }
+    return allEntries;
+  }, [allEntries, selectedTag]);
 
   const handleDeleteClick = (entryId: string) => {
     setEntryToDelete(entryId);
@@ -95,7 +143,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       }
 
       // Remove the entry from the local state
-      setEntries(entries.filter((entry) => entry.id !== entryToDelete));
+      setAllEntries(allEntries.filter((entry) => entry.id !== entryToDelete));
       showToast("Entry deleted successfully", "success");
       setDeleteDialogOpen(false);
       setEntryToDelete(null);
@@ -115,7 +163,10 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
     setIsExporting(true);
     try {
       const idToken = await user.getIdToken();
-      const response = await fetch("/api/entries/export", {
+      const params = new URLSearchParams();
+      params.set("includeImages", String(includeImagesInExport));
+      
+      const response = await fetch(`/api/entries/export?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${idToken}`,
         },
@@ -136,6 +187,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       a.remove();
       window.URL.revokeObjectURL(url);
       showToast("Download started!", "success");
+      setShowExportOptions(false);
     } catch (error) {
       console.error("Error exporting history:", error);
       showToast(
@@ -147,28 +199,31 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
     }
   };
 
-  // Group entries by tags
-  const tagGroups = useMemo(() => {
-    const groups: Record<string, Entry[]> = {};
-    entries.forEach((entry) => {
-      if (entry.tags && entry.tags.length > 0) {
-        entry.tags.forEach((tag) => {
-          if (!groups[tag]) {
-            groups[tag] = [];
-          }
-          if (!groups[tag].find((e) => e.id === entry.id)) {
-            groups[tag].push(entry);
-          }
-        });
-      }
-    });
-    return groups;
-  }, [entries]);
+  const scrollToMonth = (monthKey: string) => {
+    setSelectedMonthKey(monthKey);
+    const ref = monthRefs.current[monthKey];
+    if (ref) {
+      ref.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  function getEntryDate(entry: Entry): Date {
+    const timestamp = entry.createdAt as any;
+    try {
+      if (!timestamp) return new Date(0);
+      if (typeof timestamp.toDate === "function") return timestamp.toDate();
+      if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
+      if (timestamp._seconds) return new Date(timestamp._seconds * 1000);
+      return new Date(timestamp);
+    } catch {
+      return new Date(0);
+    }
+  }
 
   // Get all unique tags with counts
   const tagCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    entries.forEach((entry) => {
+    allEntries.forEach((entry) => {
       if (entry.tags && entry.tags.length > 0) {
         entry.tags.forEach((tag) => {
           counts[tag] = (counts[tag] || 0) + 1;
@@ -178,7 +233,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
     return Object.entries(counts)
       .map(([tag, count]) => ({ tag, count }))
       .sort((a, b) => b.count - a.count);
-  }, [entries]);
+  }, [allEntries]);
 
   // Filter entries by selected tag
   const filteredEntries = useMemo(() => {
@@ -187,6 +242,30 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       (entry) => entry.tags && entry.tags.includes(selectedTag)
     );
   }, [entries, selectedTag]);
+
+  // Group filtered entries by month for display
+  const displayMonthGroups = useMemo(() => {
+    const targetEntries = selectedTag ? filteredEntries : allEntries;
+    const groups: Map<string, MonthGroup> = new Map();
+    
+    targetEntries.forEach((entry) => {
+      const date = getEntryDate(entry);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const key = `${year}-${String(month + 1).padStart(2, "0")}`;
+      const label = date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      
+      if (!groups.has(key)) {
+        groups.set(key, { key, label, year, month, entries: [] });
+      }
+      groups.get(key)!.entries.push(entry);
+    });
+    
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+  }, [allEntries, filteredEntries, selectedTag]);
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return "Unknown date";
@@ -233,10 +312,10 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
     );
   }
 
-  if (entries.length === 0) {
+  if (allEntries.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500 text-lg">No entries found for the last 30 days.</p>
+        <p className="text-gray-500 text-lg">No entries found.</p>
         <p className="text-gray-400 text-sm mt-2">Start writing to see your entries here!</p>
       </div>
     );
@@ -247,7 +326,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
       {/* Header with view toggle */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <h2 className="text-2xl font-semibold">
-          {selectedTag ? `Tag: ${selectedTag}` : "Last 30 Days"}
+          {selectedTag ? `Tag: ${selectedTag}` : "All Entries"}
         </h2>
         <div className="flex items-center gap-4 flex-wrap justify-end">
           <div className="flex gap-2 border rounded-lg p-1">
@@ -276,17 +355,81 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
             </button>
           </div>
           <span className="text-sm text-gray-500">
-            {selectedTag ? filteredEntries.length : entries.length} entries
+            {selectedTag ? filteredEntries.length : allEntries.length} entries
           </span>
-          <button
-            onClick={handleDownloadExport}
-            disabled={isExporting}
-            className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isExporting ? "Preparing..." : "Download HTML"}
-          </button>
+          
+          {/* Export dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportOptions(!showExportOptions)}
+              disabled={isExporting}
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isExporting ? "Preparing..." : "Download"}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showExportOptions && (
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-50">
+                <h4 className="font-medium text-gray-800 mb-3">Export Options</h4>
+                <label className="flex items-center gap-3 cursor-pointer mb-4">
+                  <input
+                    type="checkbox"
+                    checked={includeImagesInExport}
+                    onChange={(e) => setIncludeImagesInExport(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  />
+                  <span className="text-sm text-gray-700">Include images</span>
+                </label>
+                <p className="text-xs text-gray-500 mb-3">
+                  {includeImagesInExport 
+                    ? "Images will be embedded (larger file size)" 
+                    : "Export will be smaller without images"}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleDownloadExport}
+                    disabled={isExporting}
+                    className="flex-1 px-3 py-2 bg-gradient-to-r from-teal-500 to-purple-500 text-white text-sm font-medium rounded-lg hover:shadow-md transition disabled:opacity-50"
+                  >
+                    {isExporting ? "..." : "Download HTML"}
+                  </button>
+                  <button
+                    onClick={() => setShowExportOptions(false)}
+                    className="px-3 py-2 text-gray-600 hover:bg-gray-100 text-sm rounded-lg transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Month Navigation - horizontal scrollable */}
+      {viewMode === "timeline" && !selectedTag && monthGroups.length > 1 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-500 mb-2">Jump to Month</h3>
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+            {monthGroups.map((group) => (
+              <button
+                key={group.key}
+                onClick={() => scrollToMonth(group.key)}
+                className={`px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition-all ${
+                  selectedMonthKey === group.key
+                    ? "bg-gradient-to-r from-teal-500 to-purple-500 text-white shadow-md"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {group.label} ({group.entries.length})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tag cloud view */}
       {viewMode === "tags" && (
@@ -334,9 +477,27 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
         </div>
       )}
 
-      {/* Entries list */}
-      <div className="space-y-4">
-        {(selectedTag ? filteredEntries : entries).map((entry) => (
+      {/* Entries grouped by month */}
+      <div className="space-y-8">
+        {displayMonthGroups.map((monthGroup) => (
+          <div
+            key={monthGroup.key}
+            ref={(el) => { monthRefs.current[monthGroup.key] = el; }}
+            className="scroll-mt-4"
+          >
+            {/* Month header */}
+            <div className="sticky top-0 z-10 bg-gradient-to-r from-white/95 to-white/90 backdrop-blur-sm py-3 mb-4 border-b border-teal-100">
+              <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-3">
+                <span className="bg-gradient-to-r from-teal-500 to-purple-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                  {monthGroup.entries.length}
+                </span>
+                {monthGroup.label}
+              </h3>
+            </div>
+            
+            {/* Entries for this month */}
+            <div className="space-y-4">
+              {monthGroup.entries.map((entry) => (
           <div
             key={entry.id}
             className="watercolor-card rounded-xl p-5 border border-teal-100 hover:border-teal-200 transition-all"
@@ -558,6 +719,9 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
               </div>
             )}
           </div>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
@@ -571,8 +735,8 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
         onConfirm={handleDeleteConfirm}
         entryTitle={
           entryToDelete
-            ? entries.find((e) => e.id === entryToDelete)?.urlTitle ||
-              entries.find((e) => e.id === entryToDelete)?.rawText?.substring(0, 50) ||
+            ? allEntries.find((e) => e.id === entryToDelete)?.urlTitle ||
+              allEntries.find((e) => e.id === entryToDelete)?.rawText?.substring(0, 50) ||
               "this entry"
             : undefined
         }

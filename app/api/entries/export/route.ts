@@ -4,7 +4,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getUserIdFromRequest } from "@/lib/auth/middleware";
 import { buildHistoryExportHtml } from "@/lib/export/buildHistoryExportHtml";
 
-const MAX_ENTRIES = 500;
+const MAX_ENTRIES = 2000;
 
 export async function GET(request: Request) {
   try {
@@ -17,7 +17,11 @@ export async function GET(request: Request) {
       );
     }
 
-    // Fetch entries
+    // Parse query parameters
+    const url = new URL(request.url);
+    const includeImages = url.searchParams.get("includeImages") !== "false";
+
+    // Fetch ALL entries (no date limit)
     const snapshot = await adminDb
       .collection("entries")
       .where("userId", "==", userId)
@@ -31,7 +35,7 @@ export async function GET(request: Request) {
     }));
 
     const exportDate = new Date();
-    const html = buildHistoryExportHtml(entries as any, exportDate);
+    const html = buildHistoryExportHtml(entries as any, exportDate, includeImages);
 
     return new NextResponse(html, {
       headers: {

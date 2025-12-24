@@ -5,11 +5,12 @@ import Image from "next/image";
 import CaptureForm from "@/components/CaptureForm";
 import UrlSummarizer from "@/components/UrlSummarizer";
 import EntryHistory from "@/components/EntryHistory";
+import ImageGallery from "@/components/ImageGallery";
 import LoginButton from "@/components/LoginButton";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useToast } from "@/lib/toast/ToastContext";
 
-type ViewMode = "capture" | "url" | "history";
+type ViewMode = "capture" | "url" | "history" | "images";
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("capture");
@@ -286,10 +287,10 @@ export default function Home() {
         </div>
 
         {/* Mode switcher */}
-        <div className="flex gap-2 mb-6 border-b border-teal-200">
+        <div className="flex gap-2 mb-6 border-b border-teal-200 overflow-x-auto">
           <button
             onClick={() => setViewMode("capture")}
-            className={`px-4 py-2 font-medium transition-colors ${
+            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${
               viewMode === "capture"
                 ? "border-b-2 border-teal-500 text-teal-600"
                 : "text-gray-600 hover:text-teal-600"
@@ -299,7 +300,7 @@ export default function Home() {
           </button>
           <button
             onClick={() => setViewMode("url")}
-            className={`px-4 py-2 font-medium transition-colors ${
+            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${
               viewMode === "url"
                 ? "border-b-2 border-teal-500 text-teal-600"
                 : "text-gray-600 hover:text-teal-600"
@@ -309,13 +310,26 @@ export default function Home() {
           </button>
           <button
             onClick={() => setViewMode("history")}
-            className={`px-4 py-2 font-medium transition-colors ${
+            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${
               viewMode === "history"
                 ? "border-b-2 border-teal-500 text-teal-600"
                 : "text-gray-600 hover:text-teal-600"
             }`}
           >
             History
+          </button>
+          <button
+            onClick={() => setViewMode("images")}
+            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+              viewMode === "images"
+                ? "border-b-2 border-pink-500 text-pink-600"
+                : "text-gray-600 hover:text-pink-600"
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Images
           </button>
         </div>
 
@@ -328,6 +342,8 @@ export default function Home() {
           />
         ) : viewMode === "url" ? (
           <UrlSummarizer onSave={handleSaveUrl} isLoading={isLoading} />
+        ) : viewMode === "images" ? (
+          <ImageGallery userId={user.uid} />
         ) : (
           <EntryHistory userId={user.uid} />
         )}
