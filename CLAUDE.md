@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Database**: Firebase Firestore
 - **Storage**: Firebase Storage
 - **Authentication**: Firebase Auth (Google OAuth)
-- **AI Provider**: Venice AI (models: `venice-uncensored`, `glm-4-6`, `mistral-large-latest`)
+- **AI Provider**: Venice AI (chat/vision model: `grok-4-3`; scraping: Venice Augment Scrape API)
 - **Styling**: Tailwind CSS
 - **Deployment**: Railway (configured for production)
 
@@ -51,7 +51,8 @@ app/
 │   │   ├── [id]/       # GET, PATCH, DELETE specific entry
 │   │   ├── improve/    # POST - AI text improvement
 │   │   ├── metadata/   # POST - Extract AI metadata
-│   │   └── export/     # GET - Export entries as HTML
+│   │   ├── export/     # GET - Export entries as HTML
+│   │   └── backup/     # GET - Download full ZIP backup (entries.json + HTML timeline + original images)
 │   ├── urls/
 │   │   └── summarize/  # POST - Scrape and summarize URLs
 │   ├── upload/         # POST - Upload images to Firebase Storage
@@ -89,10 +90,10 @@ types/
 
 1. **Entry Creation Flow**:
    - User types text/URL/uploads image → `CaptureForm.tsx`
-   - Text entries: Optional AI improvement via `/api/entries/improve` (venice-uncensored model)
-   - URL entries: Scrape + summarize via `/api/urls/summarize` (venice-uncensored model)
+   - Text entries: Optional AI improvement via `/api/entries/improve` (grok-4-3)
+   - URL entries: Scraped via Venice's Augment Scrape API (falls back to a local regex-based fetch), then summarized via `/api/urls/summarize` (grok-4-3)
    - Image entries: Upload to Firebase Storage via `/api/upload`
-   - Final save: `/api/entries` POST → Extracts metadata using GLM 4.6 (text) or Mistral (images) → Saves to Firestore
+   - Final save: `/api/entries` POST → Extracts metadata using grok-4-3 (text and images, images sent as multimodal `image_url` content) → Saves to Firestore
    - Client refetches entries to update UI
 
 2. **Authentication Flow**:
@@ -103,8 +104,8 @@ types/
    - Firestore rules enforce user-level isolation
 
 3. **AI Metadata Extraction**:
-   - **Text/URL entries**: GLM 4.6 model extracts tags, entities, topics, keywords, summary, sentiment, category
-   - **Image entries**: Mistral Large model extracts tags, description, objects, scene, mood, colors, category
+   - **Text/URL entries**: grok-4-3 extracts tags, entities, topics, keywords, summary, sentiment, category
+   - **Image entries**: grok-4-3 (multimodal) extracts tags, description, objects, scene, mood, colors, category — the image is sent as an `image_url` content part, not just a URL string in the prompt
    - All AI calls use structured JSON schema responses via Venice AI
    - Metadata is automatically extracted on entry creation (POST `/api/entries`)
 
@@ -123,26 +124,27 @@ types/
 
 ### Venice AI Integration
 
-All AI operations use Venice AI with structured JSON schema responses:
+All AI operations use Venice AI with structured JSON schema responses. All four chat functions below use model `grok-4-3`:
 
 1. **Text Improvement** (`improveEntry()`):
-   - Model: `venice-uncensored`
    - Returns: improved_text, quality_score, tags, entities, sentiment
 
 2. **URL Summarization** (`summarizeUrl()`):
-   - Model: `venice-uncensored`
    - Returns: tldr, key_points, quotes, tags
 
 3. **Text Metadata Extraction** (`extractTextMetadata()`):
-   - Model: `glm-4-6`
    - Comprehensive prompt for personal/educational/professional/creative content
    - Returns: tags, entities, topics, keywords, summary, sentiment, category
 
 4. **Image Metadata Extraction** (`extractImageMetadata()`):
-   - Model: `mistral-large-latest`
+   - Sends the image as a multimodal `image_url` content part (not a URL string in the text prompt) so the model actually sees the pixels
    - Returns: tags, description, objects, scene, mood, colors, category
 
-All functions use `response_format: { type: "json_schema" }` with strict schemas.
+5. **URL Scraping** (`scrapeUrlWithVenice()`):
+   - Uses Venice's Augment Scrape API (`POST /augment/scrape`) for robust content extraction (JS-rendered pages, paywalls, redirects)
+   - `lib/utils/url-scraper.ts` falls back to a local regex-based fetch if this fails
+
+All chat functions use `response_format: { type: "json_schema" }` with strict schemas.
 
 ## Important Implementation Details
 
