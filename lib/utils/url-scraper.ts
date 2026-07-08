@@ -1,5 +1,6 @@
 // URL scraping utility with readability-like parsing
 import * as crypto from "crypto";
+import { scrapeUrlWithVenice } from "@/lib/venice/client";
 
 export interface ScrapedContent {
   title: string;
@@ -10,16 +11,32 @@ export interface ScrapedContent {
 }
 
 /**
- * Scrapes a URL and extracts main content
- * Uses a simple fetch + basic parsing approach
- * For production, consider using libraries like @mozilla/readability or cheerio
+ * Scrapes a URL and extracts main content.
+ * Primary path: Venice's Augment Scrape API (handles JS-rendered pages,
+ * paywalls, and redirects far better than a raw fetch). Falls back to a
+ * local regex-based fetch if Venice scraping fails for any reason.
  */
 export async function scrapeUrl(url: string): Promise<ScrapedContent> {
-  try {
-    // Validate URL
-    const urlObj = new URL(url);
-    const domain = urlObj.hostname;
+  const domain = new URL(url).hostname;
 
+  try {
+    const veniceResult = await scrapeUrlWithVenice(url);
+    const content = veniceResult.content?.trim();
+    if (content) {
+      const titleMatch = content.match(/^#\s+(.+)$/m);
+      const title = titleMatch?.[1]?.trim() || domain;
+      const checksum = crypto.createHash("sha256").update(content).digest("hex");
+      return { title, content, domain, checksum };
+    }
+  } catch (error) {
+    console.error("Venice scrape failed, falling back to local scraper:", error);
+  }
+
+  return scrapeUrlLocally(url, domain);
+}
+
+async function scrapeUrlLocally(url: string, domain: string): Promise<ScrapedContent> {
+  try {
     // Fetch the URL with a user agent
     const response = await fetch(url, {
       headers: {

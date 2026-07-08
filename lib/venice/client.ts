@@ -9,9 +9,13 @@ function getVeniceApiKey(): string {
   return apiKey;
 }
 
+export type VeniceContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface VeniceChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | VeniceContentPart[];
 }
 
 export interface VeniceChatRequest {
@@ -97,7 +101,7 @@ export async function improveEntry(rawText: string): Promise<{
   sentiment: "negative" | "neutral" | "positive";
 }> {
   const request: VeniceChatRequest = {
-    model: "mistral-31-24b", // Using Mistral 31 24B model for improved reliability
+    model: "grok-4-3",
     messages: [
       {
         role: "system",
@@ -175,7 +179,7 @@ export async function summarizeUrl(
   tags: string[];
 }> {
   const request: VeniceChatRequest = {
-    model: "mistral-31-24b",
+    model: "grok-4-3",
     messages: [
       {
         role: "system",
@@ -259,7 +263,7 @@ export async function extractTextMetadata(text: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: "mistral-31-24b", // Mistral 31 24B model for text analysis
+    model: "grok-4-3",
     messages: [
       {
         role: "system",
@@ -388,16 +392,25 @@ export async function extractImageMetadata(imageUrl: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: "mistral-31-24b", // Mistral 31 24B model for image analysis
+    model: "grok-4-3",
     messages: [
       {
         role: "system",
         content:
-          "You are an expert at analyzing images and extracting rich metadata. Analyze the image at the provided URL and return comprehensive metadata including: tags (5-10 relevant tags), a detailed description, objects detected, scene description, mood, dominant colors, and category.",
+          "You are an expert at analyzing images and extracting rich metadata. Look closely at the actual pixel content of the provided image and return comprehensive metadata including: tags (5-10 relevant tags), a detailed description, objects detected, scene description, mood, dominant colors, and category. Base every field strictly on what is visibly present in the image - if the image is a screenshot, diagram, or document, describe its actual text and layout rather than guessing a generic photo scene.",
       },
       {
         role: "user",
-        content: `Please analyze this image: ${imageUrl}. Extract comprehensive metadata for searchability and categorization.`,
+        content: [
+          {
+            type: "text",
+            text: "Analyze this image and extract comprehensive metadata for searchability and categorization.",
+          },
+          {
+            type: "image_url",
+            image_url: { url: imageUrl },
+          },
+        ],
       },
     ],
     temperature: 0.5,
@@ -465,5 +478,42 @@ export async function extractImageMetadata(imageUrl: string): Promise<{
     colors: parsed.colors || [],
     category: parsed.category,
   };
+}
+
+export interface VeniceScrapeResult {
+  url: string;
+  content: string;
+  format: string;
+}
+
+// Scrape a URL's readable content via Venice's Augment API (more robust than
+// a local regex-based fetch: handles JS-rendered pages, paywalls, redirects).
+export async function scrapeUrlWithVenice(url: string): Promise<VeniceScrapeResult> {
+  const apiKey = getVeniceApiKey();
+  const response = await fetch(`${VENICE_API_URL}/augment/scrape`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ url }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorMessage = `Venice scrape error: ${response.status}`;
+    try {
+      const errorJson = JSON.parse(errorText);
+      errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+    } catch {
+      if (errorText) {
+        errorMessage = errorText.length > 200 ? errorText.substring(0, 200) + "..." : errorText;
+      }
+    }
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
 }
 

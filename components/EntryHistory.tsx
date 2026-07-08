@@ -28,6 +28,7 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
   const [includeImagesInExport, setIncludeImagesInExport] = useState(true);
   const [showExportOptions, setShowExportOptions] = useState(false);
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
@@ -199,6 +200,47 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
     }
   };
 
+  const handleDownloadBackup = async () => {
+    if (!user) return;
+    setIsBackingUp(true);
+    try {
+      const idToken = await user.getIdToken();
+      const params = new URLSearchParams();
+      params.set("includeImages", String(includeImagesInExport));
+
+      const response = await fetch(`/api/entries/backup?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to generate backup");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `visper-backup-${new Date().toISOString().split("T")[0]}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast("Backup download started!", "success");
+      setShowExportOptions(false);
+    } catch (error) {
+      console.error("Error downloading backup:", error);
+      showToast(
+        error instanceof Error ? error.message : "Failed to download backup",
+        "error"
+      );
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
   const scrollToMonth = (monthKey: string) => {
     setSelectedMonthKey(monthKey);
     const ref = monthRefs.current[monthKey];
@@ -362,10 +404,10 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
           <div className="relative">
             <button
               onClick={() => setShowExportOptions(!showExportOptions)}
-              disabled={isExporting}
+              disabled={isExporting || isBackingUp}
               className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {isExporting ? "Preparing..." : "Download"}
+              {isExporting || isBackingUp ? "Preparing..." : "Download"}
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
@@ -384,14 +426,14 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
                   <span className="text-sm text-gray-700">Include images</span>
                 </label>
                 <p className="text-xs text-gray-500 mb-3">
-                  {includeImagesInExport 
-                    ? "Images will be embedded (larger file size)" 
+                  {includeImagesInExport
+                    ? "Images will be embedded / included (larger file size)"
                     : "Export will be smaller without images"}
                 </p>
-                <div className="flex gap-2">
+                <div className="flex gap-2 mb-2">
                   <button
                     onClick={handleDownloadExport}
-                    disabled={isExporting}
+                    disabled={isExporting || isBackingUp}
                     className="flex-1 px-3 py-2 bg-gradient-to-r from-teal-500 to-purple-500 text-white text-sm font-medium rounded-lg hover:shadow-md transition disabled:opacity-50"
                   >
                     {isExporting ? "..." : "Download HTML"}
@@ -403,6 +445,16 @@ export default function EntryHistory({ userId }: EntryHistoryProps) {
                     Cancel
                   </button>
                 </div>
+                <button
+                  onClick={handleDownloadBackup}
+                  disabled={isExporting || isBackingUp}
+                  className="w-full px-3 py-2 bg-gradient-to-r from-indigo-500 to-pink-500 text-white text-sm font-medium rounded-lg hover:shadow-md transition disabled:opacity-50"
+                >
+                  {isBackingUp ? "Zipping..." : "Download Full Backup (.zip)"}
+                </button>
+                <p className="text-xs text-gray-500 mt-2">
+                  Includes raw entry data (JSON), a readable HTML timeline, and the original image files.
+                </p>
               </div>
             )}
           </div>
