@@ -26,7 +26,7 @@ export interface Entry {
   improvedText?: string;
   
   // AI metadata
-  aiModel?: string; // Venice model used for enrichment, e.g. "grok-4-3"
+  aiModel?: string; // Venice model used for tagging, e.g. "claude-haiku-5-5"
   aiPromptTemplateId?: string;
   
   // Timestamps
@@ -104,7 +104,7 @@ export interface User {
 export interface Embedding {
   entryId: string;
   userId: string;
-  vector: number[]; // 1024 dimensions (Venice text-embedding-bge-m3)
+  vector: number[]; // VENICE_EMBEDDING_DIMENSIONS of VENICE_EMBEDDING_MODEL
   model: string;
   textHash: string; // Detects when the entry text changed
   updatedAt: FirebaseFirestore.Timestamp;

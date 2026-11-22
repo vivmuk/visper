@@ -158,6 +158,9 @@ export async function semanticRank(
     adminDb.collection(EMBEDDINGS).where("userId", "==", userId).get(),
   ]);
   return snapshot.docs
+    // Vectors from a previous embedding model aren't comparable; skip them
+    // until the backfill has re-indexed those entries.
+    .filter((doc) => doc.data().model === VENICE_EMBEDDING_MODEL)
     .map((doc) => ({ entryId: doc.id, score: cosine(queryVector, doc.data().vector || []) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);

@@ -1,10 +1,23 @@
 // Venice AI API client
 const VENICE_API_URL = "https://api.venice.ai/api/v1";
 
-// Models used across the app. Stored on entries as `aiModel`.
-export const VENICE_CHAT_MODEL = "grok-4-3";
-export const VENICE_EMBEDDING_MODEL = "text-embedding-bge-m3";
-export const VENICE_TRANSCRIPTION_MODEL = "openai/whisper-large-v3";
+// Models used across the app (checked against GET /models, Nov 2026).
+// Each can be overridden with an environment variable of the same name
+// (e.g. set VENICE_CHAT_MODEL=grok-4-7 in Railway) without a code change.
+//
+// Writing, Ask, reflections and link summaries. Benchmarked against grok-4-3,
+// grok-4-7, grok-4-20 and gpt-6.2-sol: best at keeping the writer's voice and
+// ~3x faster than the Grok models (≈3s to polish an entry vs ≈10s).
+export const VENICE_CHAT_MODEL = process.env.VENICE_CHAT_MODEL || "claude-sonnet-5-5";
+// Tagging and photo analysis on every save: fast, cheap, vision + strict JSON.
+// Stored on entries as `aiModel`.
+export const VENICE_FAST_MODEL = process.env.VENICE_FAST_MODEL || "claude-haiku-5-5";
+// Embeddings for Ask / meaning search. Qwen3 supports shorter (Matryoshka)
+// vectors; 1024 dims keeps Firestore docs and search payloads small.
+// Changing either value makes /api/embeddings/backfill re-index everything.
+export const VENICE_EMBEDDING_MODEL = process.env.VENICE_EMBEDDING_MODEL || "text-embedding-qwen3-8b";
+export const VENICE_EMBEDDING_DIMENSIONS = 1024;
+export const VENICE_TRANSCRIPTION_MODEL = process.env.VENICE_TRANSCRIPTION_MODEL || "elevenlabs/scribe-v2";
 
 function getVeniceApiKey(): string {
   const apiKey = process.env.VENICE_API_KEY;
@@ -28,6 +41,8 @@ export interface VeniceChatRequest {
   messages: VeniceChatMessage[];
   temperature?: number;
   max_tokens?: number;
+  /** Reasoning models only; lower = faster answers. */
+  reasoning_effort?: "none" | "minimal" | "low" | "medium" | "high";
   response_format?: {
     type: "json_schema";
     json_schema: {
@@ -83,7 +98,10 @@ export async function callVeniceAPI(
     if (errorText && !errorText.includes("<!DOCTYPE html>")) {
       try {
         const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+        errorMessage =
+          (typeof errorJson.error === "string" ? errorJson.error : errorJson.error?.message) ||
+          errorJson.message ||
+          errorMessage;
       } catch {
         // If not JSON, use first 200 chars of error text
         errorMessage = errorText.length > 200 ? errorText.substring(0, 200) + "..." : errorText;
@@ -107,6 +125,7 @@ export async function improveEntry(rawText: string): Promise<{
 }> {
   const request: VeniceChatRequest = {
     model: VENICE_CHAT_MODEL,
+    reasoning_effort: "low",
     messages: [
       {
         role: "system",
@@ -185,6 +204,7 @@ export async function summarizeUrl(
 }> {
   const request: VeniceChatRequest = {
     model: VENICE_CHAT_MODEL,
+    reasoning_effort: "low",
     messages: [
       {
         role: "system",
@@ -268,7 +288,8 @@ export async function extractTextMetadata(text: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: VENICE_CHAT_MODEL,
+    model: VENICE_FAST_MODEL,
+    reasoning_effort: "low",
     messages: [
       {
         role: "system",
@@ -360,7 +381,8 @@ export async function extractTextMetadata(text: string): Promise<{
               description: "Optional category (e.g., 'work', 'personal', 'travel', 'reflection')",
             },
           },
-          required: ["tags", "entities", "topics", "keywords", "summary", "sentiment"],
+          // Strict mode: list every property (some providers reject optional fields)
+          required: ["tags", "entities", "topics", "keywords", "summary", "sentiment", "category"],
           additionalProperties: false,
         },
       },
@@ -397,7 +419,8 @@ export async function extractImageMetadata(imageUrl: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: VENICE_CHAT_MODEL,
+    model: VENICE_FAST_MODEL,
+    reasoning_effort: "low",
     messages: [
       {
         role: "system",
@@ -459,7 +482,8 @@ export async function extractImageMetadata(imageUrl: string): Promise<{
               description: "Category (e.g., 'nature', 'portrait', 'food', 'document', 'screenshot')",
             },
           },
-          required: ["tags", "description", "objects", "scene"],
+          // Strict mode: list every property (some providers reject optional fields)
+          required: ["tags", "description", "objects", "scene", "mood", "colors", "category"],
           additionalProperties: false,
         },
       },
@@ -553,7 +577,8 @@ export async function createEmbeddings(texts: string[]): Promise<number[][]> {
     },
     body: JSON.stringify({
       model: VENICE_EMBEDDING_MODEL,
-      // bge-m3 handles ~8k tokens; trim very long entries to keep calls fast.
+      dimensions: VENICE_EMBEDDING_DIMENSIONS,
+      // Trim very long entries to keep calls fast.
       input: texts.map((t) => t.slice(0, 8000)),
       encoding_format: "float",
     }),

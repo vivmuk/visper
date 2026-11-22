@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Database**: Firebase Firestore
 - **Storage**: Firebase Storage
 - **Authentication**: Firebase Auth (Google OAuth)
-- **AI Provider**: Venice AI (chat/vision: `grok-4-3`; embeddings: `text-embedding-bge-m3`; speech-to-text: `openai/whisper-large-v3`; scraping: Venice Augment Scrape API)
+- **AI Provider**: Venice AI — writing/Ask/reflections: `claude-sonnet-5-5`; tagging + photo analysis: `claude-haiku-5-5`; embeddings: `text-embedding-qwen3-8b` (1024 dims); speech-to-text: `elevenlabs/scribe-v2`; scraping: Venice Augment Scrape API; art: `flux-3-image`
 - **Styling**: Tailwind CSS
 - **Deployment**: Railway, built from the repo `Dockerfile` (Node 22)
 - **PWA**: installable, offline-capable (`public/sw.js`, `public/manifest.json`)
@@ -122,10 +122,10 @@ types/
 
 1. **Entry Creation Flow**:
    - User types text/URL/uploads image → `CaptureForm.tsx`
-   - Text entries: Optional AI improvement via `/api/entries/improve` (grok-4-3)
-   - URL entries: Scraped via Venice's Augment Scrape API (falls back to a local regex-based fetch), then summarized via `/api/urls/summarize` (grok-4-3)
+   - Text entries: Optional AI improvement via `/api/entries/improve` (chat model)
+   - URL entries: Scraped via Venice's Augment Scrape API (falls back to a local regex-based fetch), then summarized via `/api/urls/summarize` (chat model)
    - Photos (up to 6 per entry): compressed in the browser (max 2048px JPEG), uploaded one per request to `/api/upload` → private `entries/{uid}/{uuid}.jpg` with a download-token URL
-   - Final save: `/api/entries` POST → validates image paths belong to the user → extracts metadata using grok-4-3 (text + every image, images sent inline as base64 `image_url` parts) → saves to Firestore → stores an embedding
+   - Final save: `/api/entries` POST → validates image paths belong to the user → extracts metadata with the fast model (text + every image, images sent inline as base64 `image_url` parts) → saves to Firestore → stores an embedding
    - Offline: text entries go to a localStorage outbox (`lib/client/outbox.ts`, scoped by uid) and sync on reconnect, keeping their original time (`writtenAt`)
 
 2. **Authentication Flow**:
@@ -140,8 +140,8 @@ types/
 4. **Embeddings / Ask**: vectors live in the `embeddings` collection (doc id = entry id, `{userId, vector, model, textHash}`), written by the server only. Ranking is in-memory cosine similarity (fine for a personal journal). `/api/embeddings/backfill` is called by the Ask tab at most once a day.
 
 5. **AI Metadata Extraction**:
-   - **Text/URL entries**: grok-4-3 extracts tags, entities, topics, keywords, summary, sentiment, category
-   - **Image entries**: grok-4-3 (multimodal) extracts tags, description, objects, scene, mood, colors, category — the image is sent as an `image_url` content part, not just a URL string in the prompt
+   - **Text/URL entries**: the fast model extracts tags, entities, topics, keywords, summary, sentiment, category
+   - **Image entries**: the fast model (multimodal) extracts tags, description, objects, scene, mood, colors, category — the image is sent as an `image_url` content part, not just a URL string in the prompt
    - All AI calls use structured JSON schema responses via Venice AI
    - Metadata is automatically extracted on entry creation (POST `/api/entries`)
 
@@ -160,7 +160,15 @@ types/
 
 ### Venice AI Integration
 
-All AI operations use Venice AI. Model IDs are constants at the top of `lib/venice/client.ts` (`VENICE_CHAT_MODEL`, `VENICE_EMBEDDING_MODEL`, `VENICE_TRANSCRIPTION_MODEL`). Chat functions use `grok-4-3` with strict JSON schema responses:
+All AI operations use Venice AI. Model IDs are constants at the top of `lib/venice/client.ts`, each overridable by an env var of the same name:
+- `VENICE_CHAT_MODEL` (`claude-sonnet-5-5`): improve, summarize, Ask, reflect
+- `VENICE_FAST_MODEL` (`claude-haiku-5-5`): text + image metadata on every save
+- `VENICE_EMBEDDING_MODEL` (`text-embedding-qwen3-8b`, `VENICE_EMBEDDING_DIMENSIONS` = 1024)
+- `VENICE_TRANSCRIPTION_MODEL` (`elevenlabs/scribe-v2`)
+
+Changing the embedding model is safe: search ignores vectors from other models and the Ask tab's backfill re-indexes (bump `INDEXED_KEY` in `AskJournal.tsx` so devices re-run it). Strict JSON schemas must list **every** property in `required` (Claude models reject optional fields under strict mode). Quick tasks pass `reasoning_effort: "low"`.
+
+Chat functions use strict JSON schema responses:
 
 1. **Text Improvement** (`improveEntry()`):
    - Returns: improved_text, quality_score, tags, entities, sentiment
@@ -168,11 +176,11 @@ All AI operations use Venice AI. Model IDs are constants at the top of `lib/veni
 2. **URL Summarization** (`summarizeUrl()`):
    - Returns: tldr, key_points, quotes, tags
 
-3. **Text Metadata Extraction** (`extractTextMetadata()`):
+3. **Text Metadata Extraction** (`extractTextMetadata()`, fast model):
    - Comprehensive prompt for personal/educational/professional/creative content
    - Returns: tags, entities, topics, keywords, summary, sentiment, category
 
-4. **Image Metadata Extraction** (`extractImageMetadata()`):
+4. **Image Metadata Extraction** (`extractImageMetadata()`, fast model):
    - Sends the image as a multimodal `image_url` content part (not a URL string in the text prompt) so the model actually sees the pixels
    - Returns: tags, description, objects, scene, mood, colors, category
 
@@ -215,7 +223,7 @@ All chat functions use `response_format: { type: "json_schema" }` with strict sc
 ### Image Upload Flow
 1. User picks, pastes or drops photos in `CaptureForm.tsx` (up to 6)
 2. On save each photo is compressed (`lib/client/images.ts`) and uploaded via `/api/upload` → `{ image: EntryImage }`
-3. Entry created via `/api/entries` with `images: EntryImage[]`; the server analyzes each image with grok-4-3
+3. Entry created via `/api/entries` with `images: EntryImage[]`; the server analyzes each image with the fast model
 
 ### HTML Export
 - Export functionality generates journal-style HTML with sidebar navigation

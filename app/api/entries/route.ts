@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/middleware";
 import {
   extractTextMetadata,
   extractImageMetadata,
-  VENICE_CHAT_MODEL,
+  VENICE_FAST_MODEL,
 } from "@/lib/venice/client";
 import {
   buildDownloadUrl,
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       entities: textMeta?.entities || [],
     };
 
-    if (textMeta || firstImageMeta) entryData.aiModel = VENICE_CHAT_MODEL;
+    if (textMeta || firstImageMeta) entryData.aiModel = VENICE_FAST_MODEL;
     if (textMeta?.topics) entryData.topics = textMeta.topics;
     if (textMeta?.keywords) entryData.keywords = textMeta.keywords;
     if (textMeta?.sentiment) entryData.sentiment = textMeta.sentiment;

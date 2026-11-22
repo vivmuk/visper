@@ -25,7 +25,8 @@ interface Exchange {
   error?: string;
 }
 
-const INDEXED_KEY = "visper:indexed-at";
+// Bump the suffix when the embedding model changes so every device re-indexes.
+const INDEXED_KEY = "visper:indexed-at:qwen3-8b";
 
 export default function AskJournal({ onWrite }: { onWrite: () => void }) {
   const { user } = useAuth();

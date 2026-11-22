@@ -11,7 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const API = "https://api.venice.ai/api/v1/image/generate";
-const MODEL = process.env.VENICE_IMAGE_MODEL || "flux-2-pro";
+const MODEL = process.env.VENICE_IMAGE_MODEL || "flux-3-image";
 const OUT_DIR = path.join(process.cwd(), "public", "art", "_raw");
 
 // Shared style so every asset matches the existing logo.
