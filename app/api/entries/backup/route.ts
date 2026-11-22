@@ -3,12 +3,15 @@
 // timeline + the original image files) bundled into a single ZIP.
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
-import { adminDb, adminStorage } from "@/lib/firebase/admin";
+import { adminDb } from "@/lib/firebase/admin";
+import { getBucket } from "@/lib/firebase/storage";
+import { entryImages } from "@/lib/entries/server";
 import { getUserIdFromRequest } from "@/lib/auth/middleware";
 import { buildHistoryExportHtml } from "@/lib/export/buildHistoryExportHtml";
 
+
+export const dynamic = "force-dynamic";
 const MAX_ENTRIES = 2000;
-const STORAGE_BUCKET = "wisper-vivek.firebasestorage.app";
 
 function serializeTimestamp(value: any): string | null {
   if (!value) return null;
@@ -67,23 +70,34 @@ export async function GET(request: NextRequest) {
 
     if (includeImages) {
       const imagesFolder = zip.folder("images")!;
-      const bucket = adminStorage.bucket(STORAGE_BUCKET);
+      const bucket = getBucket();
       const downloadErrors: string[] = [];
 
-      const imageEntries = entries.filter((entry) => entry.imageStoragePath);
+      const images = entries.flatMap((entry) =>
+        entryImages(entry).map((img, index) => ({ entry, img, index }))
+      );
+
+      // Older entries saved the path without the "entries/" prefix.
+      const candidatePaths = (path: string) =>
+        path.startsWith("entries/") ? [path] : [path, `entries/${path}`];
 
       await Promise.all(
-        imageEntries.map(async (entry) => {
-          try {
-            const [buffer] = await bucket.file(entry.imageStoragePath).download();
-            const originalName = entry.imageMetadata?.filename || entry.imageStoragePath.split("/").pop();
-            const filename = safeFilename(`${entry.id}-${originalName}`);
-            imagesFolder.file(filename, buffer);
-          } catch (error) {
-            downloadErrors.push(
-              `${entry.id}: ${error instanceof Error ? error.message : "Unknown error"}`
-            );
+        images.map(async ({ entry, img, index }) => {
+          let lastError: unknown;
+          for (const path of candidatePaths(img.storagePath || "")) {
+            if (!path) continue;
+            try {
+              const [buffer] = await bucket.file(path).download();
+              const originalName = img.filename || path.split("/").pop();
+              imagesFolder.file(safeFilename(`${entry.id}-${index + 1}-${originalName}`), buffer);
+              return;
+            } catch (error) {
+              lastError = error;
+            }
           }
+          downloadErrors.push(
+            `${entry.id}: ${lastError instanceof Error ? lastError.message : "No storage path"}`
+          );
         })
       );
 

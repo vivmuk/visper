@@ -1,352 +1,256 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
-import { useState } from "react";
-import Image from "next/image";
+import { useCallback, useEffect, useState } from "react";
 import CaptureForm from "@/components/CaptureForm";
 import UrlSummarizer from "@/components/UrlSummarizer";
 import EntryHistory from "@/components/EntryHistory";
 import ImageGallery from "@/components/ImageGallery";
+import AskJournal from "@/components/AskJournal";
 import LoginButton from "@/components/LoginButton";
+import { BookIcon, CloudOffIcon, LinkIcon, PenIcon, PhotoIcon, SparkleIcon, XIcon } from "@/components/ui/Icons";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useToast } from "@/lib/toast/ToastContext";
+import { apiFetch } from "@/lib/client/api";
+import { flushOutbox, outboxCount, OUTBOX_EVENT } from "@/lib/client/outbox";
+import type { HealthResponse } from "@/types";
 
-type ViewMode = "capture" | "url" | "history" | "images";
+type Tab = "write" | "link" | "journal" | "photos" | "ask";
+
+const TABS: { id: Tab; label: string; Icon: typeof PenIcon }[] = [
+  { id: "write", label: "Write", Icon: PenIcon },
+  { id: "link", label: "Link", Icon: LinkIcon },
+  { id: "journal", label: "Journal", Icon: BookIcon },
+  { id: "photos", label: "Photos", Icon: PhotoIcon },
+  { id: "ask", label: "Ask", Icon: SparkleIcon },
+];
+
+function tabFromHash(): Tab {
+  if (typeof window === "undefined") return "write";
+  const hash = window.location.hash.replace("#", "") as Tab;
+  // Old links used #history / #images
+  if ((hash as string) === "history") return "journal";
+  if ((hash as string) === "images") return "photos";
+  return TABS.some((t) => t.id === hash) ? hash : "write";
+}
 
 export default function Home() {
-  const [viewMode, setViewMode] = useState<ViewMode>("capture");
-  const [isLoading, setIsLoading] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
+  const [tab, setTab] = useState<Tab>("write");
+  const [online, setOnline] = useState(true);
+  const [pending, setPending] = useState(0);
+  const [serviceProblems, setServiceProblems] = useState<string[]>([]);
 
-  const handleImprove = async (text: string): Promise<string> => {
-    const response = await fetch("/api/entries/improve", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ rawText: text }),
-    });
+  // Tab state lives in the URL hash so the back button and shortcuts work.
+  useEffect(() => {
+    setTab(tabFromHash());
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || "Failed to improve text");
-    }
+  const go = useCallback((next: Tab) => {
+    if (window.location.hash !== `#${next}`) window.history.pushState(null, "", `#${next}`);
+    setTab(next);
+    window.scrollTo({ top: 0 });
+  }, []);
 
-    const data = await response.json();
-    return data.improvedText;
-  };
+  // Online/offline + outbox sync.
+  useEffect(() => {
+    if (!user) return;
+    const refreshCount = () => setPending(outboxCount(user.uid));
+    const sync = async () => {
+      const sent = await flushOutbox(user);
+      if (sent > 0) showToast(`Synced ${sent} entr${sent === 1 ? "y" : "ies"} written offline`, "success");
+      refreshCount();
+    };
+    const update = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine) sync();
+    };
+    update();
+    refreshCount();
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    window.addEventListener(OUTBOX_EVENT, refreshCount);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+      window.removeEventListener(OUTBOX_EVENT, refreshCount);
+    };
+  }, [user, showToast]);
 
-  const handleSaveEntry = async (
-    rawText: string,
-    improvedText: string | null,
-    source: "raw" | "improved" | "both",
-    imageUrl?: string,
-    imageMetadata?: {
-      filename: string;
-      size: number;
-      contentType: string;
-    }
-  ) => {
-    setIsLoading(true);
+  // One health check per session, so outages (e.g. billing) are visible.
+  useEffect(() => {
+    if (!user || !navigator.onLine) return;
     try {
-      if (!user) {
-        throw new Error("You must be signed in to save entries");
-      }
-      const userId = user.uid;
-
-      const payload: any = {
-        userId,
-        type: imageUrl ? "image" : "note",
-        source,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        device: navigator.userAgent,
-      };
-
-      if (source === "raw" || source === "both") {
-        payload.rawText = rawText;
-      }
-
-      if (source === "improved" || source === "both") {
-        if (!improvedText) {
-          throw new Error("Improved text is required for this save type");
-        }
-        payload.improvedText = improvedText;
-      }
-
-      if (imageUrl) {
-        payload.imageUrl = imageUrl;
-        payload.imageStoragePath = imageUrl.split("/").slice(-2).join("/"); // Extract path
-        payload.imageMetadata = imageMetadata;
-      }
-
-      // Get Firebase ID token for authentication
-      const idToken = await user.getIdToken();
-      
-      const response = await fetch("/api/entries", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        const errorMsg = data.error || "Failed to save entry";
-        const details = data.details ? `\n\nDetails: ${data.details}` : "";
-        console.error("API Error:", data);
-        throw new Error(errorMsg + details);
-      }
-
-      const result = await response.json();
-      console.log("Entry saved successfully:", result);
-
-      showToast("Saved!!", "success");
-    } catch (error) {
-      console.error("Error saving entry:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to save entry. Please try again.";
-      showToast(errorMessage, "error");
-    } finally {
-      setIsLoading(false);
+      if (sessionStorage.getItem("visper:health-checked")) return;
+      sessionStorage.setItem("visper:health-checked", "1");
+    } catch {
+      // Storage unavailable
     }
-  };
-
-  const handleSaveUrl = async (url: string, summary: any) => {
-    setIsLoading(true);
-    try {
-      if (!user) {
-        throw new Error("You must be signed in to save entries");
-      }
-      const userId = user.uid;
-
-      // Format the summary text for display in history
-      // Combine summary, key points, and title for a readable entry
-      const summaryText = [
-        summary.meta.title ? `# ${summary.meta.title}` : "",
-        summary.summary,
-        summary.keyPoints && summary.keyPoints.length > 0 
-          ? `\n\nKey Points:\n${summary.keyPoints.map((point: string, idx: number) => `${idx + 1}. ${point}`).join("\n")}`
-          : "",
-        summary.quotes && summary.quotes.length > 0
-          ? `\n\nQuotes:\n${summary.quotes.map((quote: any) => `"${quote.text}"`).join("\n\n")}`
-          : "",
-      ].filter(Boolean).join("\n");
-
-      // Get Firebase ID token for authentication
-      const idToken = await user.getIdToken();
-      
-      const response = await fetch("/api/entries", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          userId,
-          type: "url",
-          source: "improved",
-          // Include the summary as improvedText so it displays in history
-          improvedText: summaryText,
-          rawText: summaryText, // Also include as rawText for consistency
-          url,
-          urlTitle: summary.meta.title,
-          urlDomain: summary.meta.domain,
-          urlAuthor: summary.meta.author,
-          urlChecksum: summary.meta.checksum,
-          summary: summary.summary,
-          keyPoints: summary.keyPoints,
-          quotes: summary.quotes,
-          tags: summary.tags || [],
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          device: navigator.userAgent,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to save URL");
-      }
-
-      showToast("Saved!!", "success");
-    } catch (error) {
-      console.error("Error saving URL:", error);
-      showToast("Failed to save URL. Please try again.", "error");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    apiFetch<HealthResponse>(user, "/api/health")
+      .then((h) => {
+        const problems: string[] = [];
+        if (!h.checks.firestore.ok) problems.push(`Journal database: ${h.checks.firestore.message}`);
+        if (!h.checks.storage.ok) problems.push(`Photo storage: ${h.checks.storage.message}`);
+        if (!h.checks.venice.ok) problems.push(`Venice AI: ${h.checks.venice.message}`);
+        setServiceProblems(problems);
+      })
+      .catch(() => undefined);
+  }, [user]);
 
   if (authLoading) {
     return (
-      <main className="min-h-screen p-4 md:p-8 bg-white flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+      <main className="min-h-[100dvh] grid place-items-center">
+        <img src="/icons/icon-192.png" alt="Visper" width={96} height={96} className="w-24 h-24 rounded-3xl animate-pulse" />
       </main>
     );
   }
 
-  if (!user) {
-    return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
-        <div className="max-w-2xl w-full text-center space-y-8">
-          {/* Logo */}
-          <div className="flex justify-center mb-4">
-            <Image
-              src="/logo.png"
-              alt="Visper Logo"
-              width={160}
-              height={160}
-              className="w-32 h-32 md:w-40 md:h-40 object-contain"
-              priority
-            />
-          </div>
-          
-          {/* Title and Tagline */}
-          <div>
-            <h1 className="text-5xl md:text-6xl font-bold mb-3 bg-gradient-to-r from-teal-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-              Visper
-            </h1>
-            <p className="text-xl md:text-2xl text-gray-700 font-light">
-              A thoughtful journal that thinks with you.
-            </p>
-          </div>
-
-          {/* Features */}
-          <div className="watercolor-card rounded-2xl p-8 space-y-4 text-left">
-            <h2 className="text-2xl font-semibold text-gray-800 mb-4 text-center">What makes Visper special</h2>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">✨</div>
-                <div>
-                  <p className="font-medium text-gray-800">AI-Powered Insights</p>
-                  <p className="text-sm text-gray-600">Get deeper understanding of your thoughts with intelligent analysis</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">🏷️</div>
-                <div>
-                  <p className="font-medium text-gray-800">Smart Tagging</p>
-                  <p className="text-sm text-gray-600">Automatically discover patterns and themes in your journal entries</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">📝</div>
-                <div>
-                  <p className="font-medium text-gray-800">Thoughtful Writing</p>
-                  <p className="text-sm text-gray-600">Improve and refine your journal entries while preserving your voice</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">🔍</div>
-                <div>
-                  <p className="font-medium text-gray-800">Rich Search</p>
-                  <p className="text-sm text-gray-600">Find entries by tags, topics, sentiment, and more</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Sign In */}
-          <div>
-            <p className="text-xl text-gray-700 mb-6 font-medium">
-              Sign in to start your journaling journey
-            </p>
-            <div className="flex justify-center">
-              <LoginButton />
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  if (!user) return <Landing />;
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8 flex justify-between items-start">
-          <div className="flex items-center gap-4">
-            <Image
-              src="/logo.png"
-              alt="Visper Logo"
-              width={64}
-              height={64}
-              className="w-12 h-12 md:w-16 md:h-16 object-contain"
-              priority
-            />
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold mb-1 bg-gradient-to-r from-teal-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                Visper
-              </h1>
-              <p className="text-sm md:text-base text-gray-600">
-                A thoughtful journal that thinks with you.
-              </p>
-            </div>
-          </div>
+    <div className="min-h-[100dvh]">
+      {/* Header */}
+      <header className="sticky top-0 z-30 glass border-b border-white/60 pt-safe">
+        <div className="max-w-3xl mx-auto h-[var(--header-h)] px-4 flex items-center justify-between">
+          <button onClick={() => go("write")} className="flex items-center gap-2.5" aria-label="Visper home">
+            <img src="/icons/icon-192.png" alt="" width={36} height={36} className="w-9 h-9 rounded-xl object-cover shadow-sm" />
+            <span className="text-xl font-bold gradient-text font-[Montserrat]">Visper</span>
+          </button>
+
+          {/* Desktop tabs */}
+          <nav className="hidden md:flex items-center gap-1 p-1 rounded-full bg-white/60 border border-white" aria-label="Sections">
+            {TABS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                onClick={() => go(id)}
+                aria-current={tab === id ? "page" : undefined}
+                className={`h-9 px-3.5 rounded-full text-sm font-medium flex items-center gap-1.5 transition ${
+                  tab === id ? "bg-gradient-to-r from-teal-500 to-purple-500 text-white shadow" : "text-slate-600 hover:bg-white"
+                }`}
+              >
+                <Icon size={16} />
+                {label}
+              </button>
+            ))}
+          </nav>
+
           <LoginButton />
         </div>
+      </header>
 
-        {/* Mode switcher */}
-        <div className="flex gap-2 mb-6 border-b border-teal-200 overflow-x-auto">
-          <button
-            onClick={() => setViewMode("capture")}
-            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${
-              viewMode === "capture"
-                ? "border-b-2 border-teal-500 text-teal-600"
-                : "text-gray-600 hover:text-teal-600"
-            }`}
-          >
-            Write
-          </button>
-          <button
-            onClick={() => setViewMode("url")}
-            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${
-              viewMode === "url"
-                ? "border-b-2 border-teal-500 text-teal-600"
-                : "text-gray-600 hover:text-teal-600"
-            }`}
-          >
-            URL
-          </button>
-          <button
-            onClick={() => setViewMode("history")}
-            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap ${
-              viewMode === "history"
-                ? "border-b-2 border-teal-500 text-teal-600"
-                : "text-gray-600 hover:text-teal-600"
-            }`}
-          >
-            History
-          </button>
-          <button
-            onClick={() => setViewMode("images")}
-            className={`px-4 py-2 font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-              viewMode === "images"
-                ? "border-b-2 border-pink-500 text-pink-600"
-                : "text-gray-600 hover:text-pink-600"
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            Images
-          </button>
+      {/* Status banners */}
+      {(!online || pending > 0) && (
+        <div className="max-w-3xl mx-auto px-4 pt-3">
+          <div className="flex items-center gap-2 rounded-2xl bg-amber-50/95 border border-amber-200 text-amber-800 text-sm px-3.5 py-2.5">
+            <CloudOffIcon size={18} className="shrink-0" />
+            {!online
+              ? `You're offline. New notes are kept on this device${pending ? ` (${pending} waiting)` : ""} and sync automatically.`
+              : `Syncing ${pending} entr${pending === 1 ? "y" : "ies"} written offline…`}
+          </div>
+        </div>
+      )}
+      {serviceProblems.length > 0 && (
+        <div className="max-w-3xl mx-auto px-4 pt-3">
+          <div className="relative rounded-2xl bg-rose-50/95 border border-rose-200 text-rose-800 text-sm px-3.5 py-2.5 pr-10">
+            <p className="font-semibold">Something needs attention</p>
+            <ul className="mt-0.5 space-y-0.5">
+              {serviceProblems.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+            <button
+              onClick={() => setServiceProblems([])}
+              className="absolute top-1.5 right-1.5 h-8 w-8 grid place-items-center rounded-full hover:bg-rose-100"
+              aria-label="Dismiss"
+            >
+              <XIcon size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <main className="max-w-3xl mx-auto px-4 pt-4 pb-nav md:pb-12">
+        {tab === "write" && <CaptureForm />}
+        {tab === "link" && <UrlSummarizer />}
+        {tab === "journal" && <EntryHistory onWrite={() => go("write")} />}
+        {tab === "photos" && <ImageGallery onWrite={() => go("write")} />}
+        {tab === "ask" && <AskJournal onWrite={() => go("write")} />}
+      </main>
+
+      {/* Mobile tab bar */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 glass border-t border-white/70 pb-safe"
+        aria-label="Sections"
+      >
+        <div className="h-[var(--nav-h)] grid grid-cols-5 px-1">
+          {TABS.map(({ id, label, Icon }) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => go(id)}
+                aria-current={active ? "page" : undefined}
+                className="flex flex-col items-center justify-center gap-1"
+              >
+                <span
+                  className={`h-8 w-14 grid place-items-center rounded-full transition-all ${
+                    active ? "bg-gradient-to-r from-teal-500 via-purple-500 to-pink-500 text-white shadow-md shadow-purple-200" : "text-slate-500"
+                  }`}
+                >
+                  <Icon size={20} />
+                </span>
+                <span className={`text-[11px] font-medium ${active ? "text-purple-700" : "text-slate-500"}`}>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+function Landing() {
+  return (
+    <main className="min-h-[100dvh] flex flex-col items-center px-5 pt-safe pb-safe">
+      <div className="max-w-md w-full flex-1 flex flex-col justify-center py-8">
+        <div className="text-center">
+          <img
+            src="/icons/icon-192.png"
+            alt=""
+            width={112}
+            height={112}
+            className="mx-auto w-28 h-28 rounded-[2rem] shadow-lg shadow-purple-200/60"
+          />
+          <h1 className="mt-5 text-5xl font-bold gradient-text">Visper</h1>
+          <p className="mt-2 text-lg text-slate-600">A thoughtful journal that thinks with you.</p>
         </div>
 
-        {/* Content */}
-        {viewMode === "capture" ? (
-          <CaptureForm
-            onSave={handleSaveEntry}
-            onImprove={handleImprove}
-            isLoading={isLoading}
-          />
-        ) : viewMode === "url" ? (
-          <UrlSummarizer onSave={handleSaveUrl} isLoading={isLoading} />
-        ) : viewMode === "images" ? (
-          <ImageGallery userId={user.uid} />
-        ) : (
-          <EntryHistory userId={user.uid} />
-        )}
+        <img src="/art/hero.webp" alt="" width={720} height={900} className="mt-6 mx-auto w-64 art-blend" />
+
+        <ul className="mt-6 grid grid-cols-2 gap-3 text-sm">
+          {[
+            ["✍️", "Write, talk or snap", "Notes, voice and photos"],
+            ["✨", "Gently polished", "Clearer, still your voice"],
+            ["🔍", "Find anything", "Search by words or meaning"],
+            ["🌙", "Reflect", "Ask your journal questions"],
+          ].map(([icon, title, sub]) => (
+            <li key={title} className="watercolor-card rounded-2xl border border-white/70 p-3.5">
+              <div className="text-xl">{icon}</div>
+              <p className="mt-1 font-medium text-slate-800">{title}</p>
+              <p className="text-slate-500 text-xs">{sub}</p>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-8 flex justify-center">
+          <LoginButton />
+        </div>
+        <p className="mt-4 text-center text-xs text-slate-400">Your entries and photos are private to your account.</p>
       </div>
     </main>
   );

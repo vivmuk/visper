@@ -864,16 +864,25 @@ function buildEntryCard(entry: ExportableEntry, includeImages: boolean = true) {
     </div>
     ${
       entry.url
-        ? `<h4 class="entry-title"><a href="${entry.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(
+        ? `<h4 class="entry-title"><a href="${escapeHtml(
+            /^https?:\/\//i.test(entry.url) ? entry.url : "#"
+          )}" target="_blank" rel="noopener noreferrer">${escapeHtml(
             entry.urlTitle || entry.url
           )}</a></h4>`
         : ""
     }
     ${
       entry.imageUrl && includeImages
-        ? `<div class="entry-image">
-            <img src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(entry.imageDescription || "Image")}" loading="lazy" />
+        ? (entry.images && entry.images.length > 0
+            ? entry.images
+            : [{ url: entry.imageUrl, description: entry.imageDescription }]
+          )
+            .map(
+              (img: { url: string; description?: string }) => `<div class="entry-image">
+            <img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.description || entry.imageDescription || "Image")}" loading="lazy" />
           </div>`
+            )
+            .join("")
         : entry.imageUrl && !includeImages
         ? `<div class="entry-image-placeholder" style="background: linear-gradient(135deg, #f0f9ff 0%, #faf5ff 100%); border: 2px dashed #a855f7; border-radius: 0.75rem; padding: 2rem; text-align: center; color: #7c3aed; margin-top: 1rem;">
             <span style="font-size: 2rem;">🖼️</span>

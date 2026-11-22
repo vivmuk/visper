@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  /* Watercolor theme colors from logo */
+  /* Watercolor theme colors from the logo */
   --background: #f8f9fa;
   --foreground: #1a3a52;
   --teal-blue: #7fb3d3;
@@ -13,48 +13,223 @@
   --purple: #b19cd9;
   --gold: #d4af37;
   --green: #a8c5a0;
-  --watercolor-bg: linear-gradient(180deg, #e8f4f8 0%, #f5e8f0 100%);
+  --watercolor-bg: linear-gradient(180deg, #e8f4f8 0%, #f1ecf8 55%, #f8e8f0 100%);
+
+  /* Layout */
+  --header-h: 3.5rem;
+  --nav-h: 4.25rem;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: calc(var(--header-h) + var(--safe-top) + 0.5rem);
 }
 
 body {
   color: var(--foreground);
   background: var(--watercolor-bg);
-  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-attachment: fixed;
+  font-family: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   min-height: 100vh;
-  /* Force light mode colors - prevent dark mode from changing text to white */
+  min-height: 100dvh;
+  /* Keep the light watercolor look even when the OS is in dark mode */
   color-scheme: light;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
 }
 
-/* Ensure all text elements have explicit dark colors */
+/* Venice-generated watercolor wash behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url("/art/bg-mobile.webp") center top / cover no-repeat;
+  opacity: 0.7;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  body::before {
+    background-image: url("/art/bg-desktop.webp");
+    opacity: 0.75;
+  }
+}
+
 * {
   color: inherit;
 }
 
-input, textarea, select {
+/* 16px inputs stop iOS Safari from zooming in when a field is focused */
+input,
+textarea,
+select {
   color: #1a3a52 !important;
+  font-size: 16px;
 }
 
-input::placeholder, textarea::placeholder {
+/* We draw our own clear button on search fields */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input::placeholder,
+textarea::placeholder {
   color: #9ca3af !important;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: 'Montserrat', sans-serif;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Montserrat", sans-serif;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
-  
+
   .watercolor-gradient {
     background: linear-gradient(180deg, #e8f4f8 0%, #f5e8f0 100%);
   }
-  
+
   .watercolor-card {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     box-shadow: 0 4px 20px rgba(122, 179, 211, 0.15);
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: saturate(160%) blur(16px);
+    -webkit-backdrop-filter: saturate(160%) blur(16px);
+  }
+
+  .gradient-text {
+    background-image: linear-gradient(90deg, #0d9488, #9333ea, #db2777);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .btn-gradient {
+    background-image: linear-gradient(90deg, #14b8a6, #8b5cf6, #ec4899);
+    color: white;
+  }
+
+  /* Lets white-paper watercolor art melt into the gradient behind it */
+  .art-blend {
+    mix-blend-mode: multiply;
+    -webkit-mask-image: radial-gradient(closest-side, #000 72%, transparent 100%);
+    mask-image: radial-gradient(closest-side, #000 72%, transparent 100%);
+  }
+
+  .pt-safe {
+    padding-top: var(--safe-top);
+  }
+  .pb-safe {
+    padding-bottom: var(--safe-bottom);
+  }
+  .pb-nav {
+    padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 1.5rem);
+  }
+  .bottom-nav-offset {
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 0.75rem);
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .line-clamp-8 {
+    display: -webkit-box;
+    -webkit-line-clamp: 8;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }
 
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-sheet-up {
+  animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+.animate-rise-in {
+  animation: rise-in 0.3s ease-out both;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(204, 230, 238, 0.45);
+  border-radius: 0.5rem;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

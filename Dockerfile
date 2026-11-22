@@ -1,5 +1,5 @@
-# Use Node.js 18
-FROM node:18-alpine AS base
+# Node.js 22 LTS (firebase-admin 14 requires Node >= 22)
+FROM node:22-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps

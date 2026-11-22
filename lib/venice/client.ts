@@ -1,6 +1,11 @@
 // Venice AI API client
 const VENICE_API_URL = "https://api.venice.ai/api/v1";
 
+// Models used across the app. Stored on entries as `aiModel`.
+export const VENICE_CHAT_MODEL = "grok-4-3";
+export const VENICE_EMBEDDING_MODEL = "text-embedding-bge-m3";
+export const VENICE_TRANSCRIPTION_MODEL = "openai/whisper-large-v3";
+
 function getVeniceApiKey(): string {
   const apiKey = process.env.VENICE_API_KEY;
   if (!apiKey) {
@@ -101,7 +106,7 @@ export async function improveEntry(rawText: string): Promise<{
   sentiment: "negative" | "neutral" | "positive";
 }> {
   const request: VeniceChatRequest = {
-    model: "grok-4-3",
+    model: VENICE_CHAT_MODEL,
     messages: [
       {
         role: "system",
@@ -179,7 +184,7 @@ export async function summarizeUrl(
   tags: string[];
 }> {
   const request: VeniceChatRequest = {
-    model: "grok-4-3",
+    model: VENICE_CHAT_MODEL,
     messages: [
       {
         role: "system",
@@ -263,7 +268,7 @@ export async function extractTextMetadata(text: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: "grok-4-3",
+    model: VENICE_CHAT_MODEL,
     messages: [
       {
         role: "system",
@@ -392,7 +397,7 @@ export async function extractImageMetadata(imageUrl: string): Promise<{
   category?: string;
 }> {
   const request: VeniceChatRequest = {
-    model: "grok-4-3",
+    model: VENICE_CHAT_MODEL,
     messages: [
       {
         role: "system",
@@ -517,3 +522,202 @@ export async function scrapeUrlWithVenice(url: string): Promise<VeniceScrapeResu
   return response.json();
 }
 
+
+function veniceErrorMessage(status: number, body: string, label: string) {
+  try {
+    const json = JSON.parse(body);
+    return json.error?.message || json.error || json.message || `${label}: ${status}`;
+  } catch {
+    return body && !body.includes("<!DOCTYPE") ? body.slice(0, 200) : `${label}: ${status}`;
+  }
+}
+
+function parseChatJson<T>(response: VeniceChatResponse): T {
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("No content in Venice API response");
+  return JSON.parse(content) as T;
+}
+
+// ---------------------------------------------------------------------------
+// Embeddings (semantic search / "Ask my journal")
+// ---------------------------------------------------------------------------
+
+/** Embeds up to ~64 texts in one call. Returns one vector per input. */
+export async function createEmbeddings(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const response = await fetch(`${VENICE_API_URL}/embeddings`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getVeniceApiKey()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: VENICE_EMBEDDING_MODEL,
+      // bge-m3 handles ~8k tokens; trim very long entries to keep calls fast.
+      input: texts.map((t) => t.slice(0, 8000)),
+      encoding_format: "float",
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) {
+    throw new Error(veniceErrorMessage(response.status, await response.text(), "Venice embeddings error"));
+  }
+  const data = await response.json();
+  return (data.data as Array<{ index: number; embedding: number[] }>)
+    .sort((a, b) => a.index - b.index)
+    .map((d) => d.embedding);
+}
+
+// ---------------------------------------------------------------------------
+// Speech to text (voice notes)
+// ---------------------------------------------------------------------------
+
+export async function transcribeAudio(audio: Blob, filename: string): Promise<string> {
+  const form = new FormData();
+  form.append("file", audio, filename);
+  form.append("model", VENICE_TRANSCRIPTION_MODEL);
+  form.append("response_format", "json");
+  const response = await fetch(`${VENICE_API_URL}/audio/transcriptions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getVeniceApiKey()}` },
+    body: form,
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!response.ok) {
+    throw new Error(veniceErrorMessage(response.status, await response.text(), "Venice transcription error"));
+  }
+  const data = await response.json();
+  return (data.text || "").trim();
+}
+
+// ---------------------------------------------------------------------------
+// Ask my journal
+// ---------------------------------------------------------------------------
+
+export interface JournalContextEntry {
+  id: string;
+  date: string;
+  text: string;
+}
+
+export async function answerFromJournal(
+  question: string,
+  context: JournalContextEntry[]
+): Promise<{ answer: string; sourceIds: string[] }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const contextText = context
+    .map((c) => `[${c.id}] (${c.date})\n${c.text}`)
+    .join("\n\n---\n\n");
+
+  const response = await callVeniceAPI({
+    model: VENICE_CHAT_MODEL,
+    temperature: 0.4,
+    messages: [
+      {
+        role: "system",
+        content:
+          `You are a warm, perceptive companion helping someone understand their own private journal. Today is ${today}. ` +
+          "Answer ONLY from the journal entries provided. Speak to the writer as \"you\". " +
+          "Be specific: mention dates and concrete details from the entries. If the entries don't contain the answer, say so kindly and suggest what they might write about. " +
+          "Keep answers concise (under 180 words) and use short paragraphs or a short list when helpful. " +
+          "Return the IDs of the entries you actually relied on in source_ids.",
+      },
+      {
+        role: "user",
+        content: `Journal entries:\n\n${contextText || "(no entries found)"}\n\nQuestion: ${question}`,
+      },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "journal_answer",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            answer: { type: "string" },
+            source_ids: { type: "array", items: { type: "string" } },
+          },
+          required: ["answer", "source_ids"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+
+  const parsed = parseChatJson<{ answer: string; source_ids: string[] }>(response);
+  return { answer: parsed.answer, sourceIds: parsed.source_ids || [] };
+}
+
+// ---------------------------------------------------------------------------
+// Weekly / monthly reflection
+// ---------------------------------------------------------------------------
+
+export async function reflectOnJournal(
+  period: "week" | "month",
+  context: JournalContextEntry[]
+): Promise<{
+  title: string;
+  summary: string;
+  themes: string[];
+  mood: string;
+  highlights: string[];
+  prompt: string;
+}> {
+  const contextText = context.map((c) => `(${c.date})\n${c.text}`).join("\n\n---\n\n");
+  const response = await callVeniceAPI({
+    model: VENICE_CHAT_MODEL,
+    temperature: 0.6,
+    messages: [
+      {
+        role: "system",
+        content:
+          `You write gentle, insightful ${period}ly reflections on someone's private journal. ` +
+          "Speak to the writer as \"you\". Notice patterns, recurring themes, emotional shifts, small wins and things they seem to care about. " +
+          "Never diagnose or lecture. Be warm, specific and grounded in the entries. " +
+          "title: a short evocative title (max 8 words). summary: 2-4 sentences. themes: 3-5 short phrases. " +
+          "mood: one short phrase describing the overall emotional arc. highlights: 2-4 specific moments worth remembering. " +
+          "prompt: one thoughtful journaling question for the coming " + period + ".",
+      },
+      { role: "user", content: contextText },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "journal_reflection",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            summary: { type: "string" },
+            themes: { type: "array", items: { type: "string" } },
+            mood: { type: "string" },
+            highlights: { type: "array", items: { type: "string" } },
+            prompt: { type: "string" },
+          },
+          required: ["title", "summary", "themes", "mood", "highlights", "prompt"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+  return parseChatJson(response);
+}
+
+// ---------------------------------------------------------------------------
+// Account health (balance check, no inference cost)
+// ---------------------------------------------------------------------------
+
+export async function getVeniceBalance(): Promise<{ usd: number; diem: number }> {
+  const response = await fetch(`${VENICE_API_URL}/api_keys/rate_limits`, {
+    headers: { Authorization: `Bearer ${getVeniceApiKey()}` },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) {
+    throw new Error(veniceErrorMessage(response.status, await response.text(), "Venice error"));
+  }
+  const data = await response.json();
+  const balances = data?.data?.balances || {};
+  return { usd: Number(balances.USD || 0), diem: Number(balances.DIEM || 0) };
+}

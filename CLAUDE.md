@@ -13,9 +13,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Database**: Firebase Firestore
 - **Storage**: Firebase Storage
 - **Authentication**: Firebase Auth (Google OAuth)
-- **AI Provider**: Venice AI (chat/vision model: `grok-4-3`; scraping: Venice Augment Scrape API)
+- **AI Provider**: Venice AI (chat/vision: `grok-4-3`; embeddings: `text-embedding-bge-m3`; speech-to-text: `openai/whisper-large-v3`; scraping: Venice Augment Scrape API)
 - **Styling**: Tailwind CSS
-- **Deployment**: Railway (configured for production)
+- **Deployment**: Railway, built from the repo `Dockerfile` (Node 22)
+- **PWA**: installable, offline-capable (`public/sw.js`, `public/manifest.json`)
 
 ## Development Commands
 
@@ -35,8 +36,12 @@ npm start
 # Lint code
 npm run lint
 
-# Deploy Firestore rules
-firebase deploy --only firestore:rules
+# Deploy Firestore + Storage rules
+firebase deploy --only firestore:rules,storage
+
+# Regenerate decorative art with Venice (needs VENICE_API_KEY) and optimize it
+npm run art:generate
+npm run art:optimize
 ```
 
 ## Architecture Overview
@@ -48,26 +53,37 @@ app/
 ├── api/                  # Next.js API routes (server-side)
 │   ├── entries/         # Entry CRUD operations
 │   │   ├── route.ts    # GET (list), POST (create)
-│   │   ├── [id]/       # GET, PATCH, DELETE specific entry
+│   │   ├── [id]/       # PATCH (edit text/tags), DELETE (also deletes photos + embedding)
 │   │   ├── improve/    # POST - AI text improvement
-│   │   ├── metadata/   # POST - Extract AI metadata
 │   │   ├── export/     # GET - Export entries as HTML
 │   │   └── backup/     # GET - Download full ZIP backup (entries.json + HTML timeline + original images)
 │   ├── urls/
-│   │   └── summarize/  # POST - Scrape and summarize URLs
-│   ├── upload/         # POST - Upload images to Firebase Storage
-│   └── search/         # GET - Search entries with filters
-├── layout.tsx          # Root layout with auth state
-└── page.tsx            # Main UI (CaptureForm + EntryHistory)
+│   │   └── summarize/  # POST - Scrape and summarize URLs (public http(s) hosts only)
+│   ├── upload/         # POST - Upload one image to the user's private folder
+│   ├── search/         # GET - Keyword (+ optional semantic) search with filters
+│   ├── ask/            # POST - "Ask my journal" (RAG over the user's entries)
+│   ├── reflect/        # POST - Weekly/monthly AI reflection
+│   ├── transcribe/     # POST - Voice note -> text (audio is not stored)
+│   ├── embeddings/backfill/ # POST - Index entries that lack an up-to-date embedding
+│   ├── images/secure/  # GET count / POST migrate legacy public images to private URLs
+│   └── health/         # GET - Firestore / Storage / Venice balance status
+├── layout.tsx          # Root layout (auth, toasts, service worker)
+└── page.tsx            # App shell: header, bottom tab bar, offline/health banners
 
 components/
-├── CaptureForm.tsx           # Main journal input (text, URL, image)
-├── EntryHistory.tsx          # Display and manage entries
-├── UrlSummarizer.tsx         # URL preview and summarization
-├── DeleteConfirmationDialog.tsx
-├── LoginButton.tsx
-├── UserMenu.tsx
-└── Toast.tsx
+├── CaptureForm.tsx           # Write tab: text, multiple photos, voice, polish, draft autosave, offline outbox
+├── UrlSummarizer.tsx         # Link tab: summarize + save links
+├── EntryHistory.tsx          # Journal tab: search, filters, month jump, tags, export
+├── EntryCard.tsx             # One entry in the journal
+├── EditEntrySheet.tsx        # Edit text + tags
+├── ImageGallery.tsx          # Photos tab
+├── ImageViewer.tsx           # Full-screen swipeable photo viewer
+├── AskJournal.tsx            # Ask tab: questions + reflections
+├── VoiceRecorder.tsx         # MediaRecorder -> /api/transcribe
+├── UserMenu.tsx              # Account sheet: system status, secure old photos, install, sign out
+├── ServiceWorkerRegister.tsx
+├── ui/                       # BottomSheet, EmptyState (Venice art), Icons
+├── DeleteConfirmationDialog.tsx, LoginButton.tsx, Toast.tsx
 
 lib/
 ├── firebase/
@@ -75,12 +91,28 @@ lib/
 │   └── admin.ts        # Server-side Firebase Admin SDK
 ├── venice/
 │   └── client.ts       # Venice AI integration (all models)
+├── firebase/storage.ts # Private image storage (download-token URLs), path checks, deletes
 ├── auth/
-│   └── middleware.ts   # JWT token verification for API routes
+│   └── middleware.ts   # getUserIdFromRequest() / requireUser() for API routes
+├── entries/
+│   ├── shared.ts       # Pure helpers (toDate, entryImages) for server + browser
+│   └── server.ts       # entryToText, embeddings upsert/backfill, semantic ranking
+├── client/             # Browser helpers: apiFetch (auth + readable errors), image compression,
+│                       # offline outbox, date formatting
 ├── export/
 │   └── buildHistoryExportHtml.ts  # HTML export generation
 └── utils/
     └── url-scraper.ts  # Web scraping utility
+
+public/
+├── art/                # Venice-generated watercolor art (WebP); raw PNGs in art/_raw are git-ignored
+├── icons/              # PWA icons built from logo.png
+├── sw.js               # Service worker
+└── manifest.json
+
+scripts/
+├── generate-art.mjs    # Generates art with the Venice image API (`npm run art:generate`)
+└── optimize-art.py     # Resizes art to WebP + builds icons (`npm run art:optimize`)
 
 types/
 └── index.ts            # TypeScript type definitions
@@ -92,9 +124,9 @@ types/
    - User types text/URL/uploads image → `CaptureForm.tsx`
    - Text entries: Optional AI improvement via `/api/entries/improve` (grok-4-3)
    - URL entries: Scraped via Venice's Augment Scrape API (falls back to a local regex-based fetch), then summarized via `/api/urls/summarize` (grok-4-3)
-   - Image entries: Upload to Firebase Storage via `/api/upload`
-   - Final save: `/api/entries` POST → Extracts metadata using grok-4-3 (text and images, images sent as multimodal `image_url` content) → Saves to Firestore
-   - Client refetches entries to update UI
+   - Photos (up to 6 per entry): compressed in the browser (max 2048px JPEG), uploaded one per request to `/api/upload` → private `entries/{uid}/{uuid}.jpg` with a download-token URL
+   - Final save: `/api/entries` POST → validates image paths belong to the user → extracts metadata using grok-4-3 (text + every image, images sent inline as base64 `image_url` parts) → saves to Firestore → stores an embedding
+   - Offline: text entries go to a localStorage outbox (`lib/client/outbox.ts`, scoped by uid) and sync on reconnect, keeping their original time (`writtenAt`)
 
 2. **Authentication Flow**:
    - Google OAuth via Firebase Auth (`lib/firebase/client.ts`)
@@ -103,7 +135,11 @@ types/
    - Server validates token via `getUserIdFromRequest()` in `lib/auth/middleware.ts`
    - Firestore rules enforce user-level isolation
 
-3. **AI Metadata Extraction**:
+3. **Images are private**: never call `makePublic()`. `lib/firebase/storage.ts` stores each object with a `firebaseStorageDownloadTokens` token and returns `https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token=...`. Entries store `images: EntryImage[]`; `imageUrl`/`imageStoragePath`/`imageMetadata` mirror the first image for older readers. Older entries may still have public `storage.googleapis.com` URLs and paths without the `entries/` prefix — `/api/images/secure` migrates them.
+
+4. **Embeddings / Ask**: vectors live in the `embeddings` collection (doc id = entry id, `{userId, vector, model, textHash}`), written by the server only. Ranking is in-memory cosine similarity (fine for a personal journal). `/api/embeddings/backfill` is called by the Ask tab at most once a day.
+
+5. **AI Metadata Extraction**:
    - **Text/URL entries**: grok-4-3 extracts tags, entities, topics, keywords, summary, sentiment, category
    - **Image entries**: grok-4-3 (multimodal) extracts tags, description, objects, scene, mood, colors, category — the image is sent as an `image_url` content part, not just a URL string in the prompt
    - All AI calls use structured JSON schema responses via Venice AI
@@ -124,7 +160,7 @@ types/
 
 ### Venice AI Integration
 
-All AI operations use Venice AI with structured JSON schema responses. All four chat functions below use model `grok-4-3`:
+All AI operations use Venice AI. Model IDs are constants at the top of `lib/venice/client.ts` (`VENICE_CHAT_MODEL`, `VENICE_EMBEDDING_MODEL`, `VENICE_TRANSCRIPTION_MODEL`). Chat functions use `grok-4-3` with strict JSON schema responses:
 
 1. **Text Improvement** (`improveEntry()`):
    - Returns: improved_text, quality_score, tags, entities, sentiment
@@ -140,7 +176,11 @@ All AI operations use Venice AI with structured JSON schema responses. All four 
    - Sends the image as a multimodal `image_url` content part (not a URL string in the text prompt) so the model actually sees the pixels
    - Returns: tags, description, objects, scene, mood, colors, category
 
-5. **URL Scraping** (`scrapeUrlWithVenice()`):
+5. **Ask / Reflect** (`answerFromJournal()`, `reflectOnJournal()`): answer questions and write reflections strictly from supplied entry excerpts
+
+6. **Embeddings** (`createEmbeddings()`), **Transcription** (`transcribeAudio()`), **Balance** (`getVeniceBalance()`, used by `/api/health`)
+
+7. **URL Scraping** (`scrapeUrlWithVenice()`):
    - Uses Venice's Augment Scrape API (`POST /augment/scrape`) for robust content extraction (JS-rendered pages, paywalls, redirects)
    - `lib/utils/url-scraper.ts` falls back to a local regex-based fetch if this fails
 
@@ -158,8 +198,8 @@ All chat functions use `response_format: { type: "json_schema" }` with strict sc
 - See `app/api/entries/route.ts` GET handler for date filtering examples
 
 ### Authentication Middleware
-- All API routes should call `getUserIdFromRequest(request)` first
-- Return 401 if `userId` is null
+- Every API route must start with `const auth = await requireUser(request); if (auth instanceof NextResponse) return auth;`
+- Never trust a `userId` sent by the client (query string or form data)
 - Use `userId` for all Firestore queries to enforce user isolation
 
 ### Entry Types
@@ -173,10 +213,9 @@ All chat functions use `response_format: { type: "json_schema" }` with strict sc
 - **both**: Both raw and improved text saved
 
 ### Image Upload Flow
-1. User selects image in `CaptureForm.tsx`
-2. Upload to Firebase Storage via `/api/upload` (returns URL and storage path)
-3. Extract metadata via `/api/entries/metadata` (Mistral model)
-4. Create entry via `/api/entries` with imageUrl, imageStoragePath, and AI metadata
+1. User picks, pastes or drops photos in `CaptureForm.tsx` (up to 6)
+2. On save each photo is compressed (`lib/client/images.ts`) and uploaded via `/api/upload` → `{ image: EntryImage }`
+3. Entry created via `/api/entries` with `images: EntryImage[]`; the server analyzes each image with grok-4-3
 
 ### HTML Export
 - Export functionality generates journal-style HTML with sidebar navigation
@@ -244,12 +283,21 @@ For Railway deployment, use individual env vars instead of service account file 
 - **Start command**: `npm start`
 - See `DEPLOYMENT.md` for detailed instructions
 
+### Client API calls
+- Use `apiFetch(user, path, init)` from `lib/client/api.ts`: it adds the ID token, sets JSON headers, and throws `ApiError` with the server's message (show it with `errorMessage(err)`).
+
+### UI conventions (mobile-first)
+- Keep the watercolor look: `watercolor-card`, `glass`, `btn-gradient`, `gradient-text`, teal → purple → pink gradients
+- Tap targets ≥ 44px, inputs 16px (prevents iOS zoom), respect safe areas (`pt-safe`, `pb-safe`, `pb-nav`)
+- Use `BottomSheet` for dialogs/menus, `EmptyState` (with `/art/*.webp`) for empty screens
+- Spot art uses `art-blend` (multiply + soft mask) so it melts into the background
+- New art: add a prompt to `scripts/generate-art.mjs`, run `npm run art:generate <name>` then `npm run art:optimize`
+
 ## Known Issues / TODO
 
-- Semantic search with pgvector not yet implemented (planned)
-- Offline support / PWA features not yet implemented
-- Date range filtering in GET `/api/entries` is done client-side (Firestore ordering limitation)
-- Image upload size limits not enforced yet
+- Date range filtering in GET `/api/entries` is done in memory (Firestore ordering limitation)
+- Semantic ranking loads all of a user's vectors per query; switch to Firestore vector search (`findNearest`) if journals grow very large
+- Deploy `firestore.rules` and `storage.rules` after changes: `firebase deploy --only firestore:rules,storage`
 
 ## Additional Documentation
 

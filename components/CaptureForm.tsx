@@ -1,277 +1,403 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
-import { useState, useRef, KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { useToast } from "@/lib/toast/ToastContext";
+import { apiFetch, errorMessage, haptic } from "@/lib/client/api";
+import { prepareImage } from "@/lib/client/images";
+import { queueEntry } from "@/lib/client/outbox";
+import { dailyPrompt, greeting, wordCount } from "@/lib/client/format";
+import VoiceRecorder from "./VoiceRecorder";
+import { CameraIcon, SparkleIcon, XIcon } from "./ui/Icons";
+import type { EntryImage } from "@/types";
 
-interface CaptureFormProps {
-  onSave: (
-    rawText: string,
-    improvedText: string | null,
-    source: "raw" | "improved" | "both",
-    imageUrl?: string,
-    imageMetadata?: {
-      filename: string;
-      size: number;
-      contentType: string;
-    }
-  ) => void;
-  onImprove?: (text: string) => Promise<string>;
-  isLoading?: boolean;
+export const DRAFT_KEY = "visper:draft";
+const MAX_IMAGES = 6;
+
+interface PendingImage {
+  id: string;
+  file: File;
+  preview: string;
 }
 
-export default function CaptureForm({
-  onSave,
-  onImprove,
-  isLoading = false,
-}: CaptureFormProps) {
+interface CaptureFormProps {
+  onSaved?: () => void;
+}
+
+export default function CaptureForm({ onSaved }: CaptureFormProps) {
+  const { user } = useAuth();
+  const { showToast } = useToast();
   const [text, setText] = useState("");
+  const [images, setImages] = useState<PendingImage[]>([]);
   const [improvedText, setImprovedText] = useState<string | null>(null);
   const [isImproving, setIsImproving] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { showToast } = useToast();
+  // Photos already uploaded in a previous (failed) save attempt are reused.
+  const uploadedRef = useRef<Map<string, EntryImage>>(new Map());
+  const isSaving = saveStatus !== null;
+  // Time-of-day text is set after mount (server and phone clocks differ).
+  const [hello, setHello] = useState("");
+  const [prompt, setPrompt] = useState("What's on your mind?");
+  useEffect(() => {
+    setHello(greeting());
+    setPrompt(dailyPrompt());
+  }, []);
+
+  // Restore the draft (also used by "Write about this" from reflections).
+  useEffect(() => {
+    try {
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft) setText(draft);
+    } catch {
+      // Storage unavailable
+    }
+  }, []);
+
+  // Autosave the draft as you type.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        if (text) localStorage.setItem(DRAFT_KEY, text);
+        else localStorage.removeItem(DRAFT_KEY);
+        setDraftSaved(!!text);
+      } catch {
+        // Storage unavailable
+      }
+    }, 500);
+    setDraftSaved(false);
+    return () => clearTimeout(t);
+  }, [text]);
+
+  // Grow the textarea with its content.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(el.scrollHeight, 180)}px`;
+  }, [text]);
+
+  // Free preview URLs.
+  useEffect(() => () => images.forEach((img) => URL.revokeObjectURL(img.preview)), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      const incoming = Array.from(files).filter((f) => f.type.startsWith("image/"));
+      if (incoming.length === 0) return;
+      setImages((current) => {
+        const room = MAX_IMAGES - current.length;
+        if (incoming.length > room) {
+          showToast(`You can add up to ${MAX_IMAGES} photos per entry`, "info");
+        }
+        const tooBig = incoming.filter((f) => f.size > 40 * 1024 * 1024);
+        if (tooBig.length) showToast("Photos over 40 MB were skipped", "error");
+        return [
+          ...current,
+          ...incoming
+            .filter((f) => f.size <= 40 * 1024 * 1024)
+            .slice(0, Math.max(0, room))
+            .map((file) => ({
+              id: Math.random().toString(36).slice(2),
+              file,
+              preview: URL.createObjectURL(file),
+            })),
+        ];
+      });
+    },
+    [showToast]
+  );
+
+  const removeImage = (id: string) => {
+    setImages((current) => {
+      const img = current.find((i) => i.id === id);
+      if (img) URL.revokeObjectURL(img.preview);
+      return current.filter((i) => i.id !== id);
+    });
+  };
 
   const handleImprove = async () => {
-    if (!text.trim() || !onImprove) return;
-
+    if (!text.trim()) return;
     setIsImproving(true);
     try {
-      const improved = await onImprove(text);
-      setImprovedText(improved);
-      setShowPreview(true);
+      const data = await apiFetch<{ improvedText: string }>(user, "/api/entries/improve", {
+        method: "POST",
+        body: JSON.stringify({ rawText: text }),
+      });
+      setImprovedText(data.improvedText);
     } catch (error) {
-      console.error("Error improving text:", error);
-      showToast("Failed to improve text. Please try again.", "error");
+      showToast(errorMessage(error, "Couldn't polish that right now"), "error");
     } finally {
       setIsImproving(false);
     }
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith("image/")) {
-        showToast("Please select an image file", "error");
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        showToast("Image size must be less than 10MB", "error");
-        return;
-      }
-      setSelectedImage(file);
-      // Create preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleRemoveImage = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+  const reset = () => {
+    setText("");
+    setImprovedText(null);
+    images.forEach((img) => URL.revokeObjectURL(img.preview));
+    setImages([]);
+    uploadedRef.current.clear();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // Storage unavailable
     }
   };
 
   const handleSave = async (source: "raw" | "improved" | "both") => {
-    if (source === "improved" && !improvedText) {
-      showToast("No improved text available. Please improve first.", "error");
-      return;
-    }
+    if (!user || isSaving) return;
+    if (!text.trim() && images.length === 0) return;
 
-    if (source === "both" && !improvedText) {
-      showToast("No improved text available. Please improve first.", "error");
-      return;
-    }
+    const payload: Record<string, any> = {
+      type: images.length ? "image" : "note",
+      source,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      device: navigator.userAgent,
+    };
+    if (source === "raw" || source === "both") payload.rawText = text;
+    if ((source === "improved" || source === "both") && improvedText) payload.improvedText = improvedText;
 
-    let imageUrl: string | undefined;
-    let imageMetadata: { filename: string; size: number; contentType: string } | undefined;
-
-    // Upload image if selected
-    if (selectedImage) {
-      setIsUploadingImage(true);
-      try {
-        const formData = new FormData();
-        formData.append("file", selectedImage);
-        formData.append("userId", "temp-user-id"); // TODO: Get from auth
-
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to upload image");
-        }
-
-        const data = await response.json();
-        imageUrl = data.url;
-        imageMetadata = data.metadata;
-      } catch (error) {
-        console.error("Error uploading image:", error);
-        showToast("Failed to upload image. Please try again.", "error");
-        setIsUploadingImage(false);
+    // Offline: text entries wait in the outbox; photos need a connection.
+    if (!navigator.onLine) {
+      if (images.length) {
+        showToast("Photos need a connection. Remove them to save this offline.", "error");
         return;
       }
-      setIsUploadingImage(false);
+      queueEntry(user.uid, payload);
+      haptic([10, 40, 10]);
+      showToast("Saved on this device — it will sync when you're back online", "info");
+      reset();
+      return;
     }
 
-    onSave(text, improvedText, source, imageUrl, imageMetadata);
-    // Reset form
-    setText("");
-    setImprovedText(null);
-    setShowPreview(false);
-    setSelectedImage(null);
-    setImagePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+    try {
+      let uploaded: EntryImage[] = [];
+      if (images.length) {
+        let done = 0;
+        setSaveStatus(`Preparing ${images.length} photo${images.length > 1 ? "s" : ""}…`);
+        uploaded = await Promise.all(
+          images.map(async (img) => {
+            const already = uploadedRef.current.get(img.id);
+            if (already) {
+              done++;
+              return already;
+            }
+            const prepared = await prepareImage(img.file);
+            const form = new FormData();
+            form.append("file", prepared.file);
+            if (prepared.width) form.append("width", String(prepared.width));
+            if (prepared.height) form.append("height", String(prepared.height));
+            const { image } = await apiFetch<{ image: EntryImage }>(user, "/api/upload", {
+              method: "POST",
+              body: form,
+            });
+            uploadedRef.current.set(img.id, image);
+            done++;
+            setSaveStatus(`Uploading photos ${done}/${images.length}…`);
+            return image;
+          })
+        );
+        payload.images = uploaded;
+      }
+
+      setSaveStatus("Saving & tagging…");
+      await apiFetch(user, "/api/entries", { method: "POST", body: JSON.stringify(payload) });
+      haptic([10, 40, 10]);
+      showToast("Saved to your journal ✨", "success");
+      reset();
+      onSaved?.();
+    } catch (error) {
+      showToast(errorMessage(error, "Couldn't save. Your draft is still here."), "error");
+    } finally {
+      setSaveStatus(null);
     }
-    textareaRef.current?.focus();
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Cmd/Ctrl + Enter to improve
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      handleImprove();
-    }
-  };
+  const canSave = (text.trim().length > 0 || images.length > 0) && !isSaving;
+  const words = wordCount(text);
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
-      {/* Main input */}
-      <div className="mb-4">
+    <div
+      className="animate-rise-in"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          setIsDragging(true);
+        }
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        addFiles(e.dataTransfer.files);
+      }}
+    >
+      <p className="text-sm text-slate-500 mb-2 px-1 min-h-5">
+        {hello}
+        {hello && user?.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
+      </p>
+
+      <div
+        className={`watercolor-card rounded-3xl border transition-colors ${
+          isDragging ? "border-purple-400 ring-4 ring-purple-200/60" : "border-white/70"
+        }`}
+      >
         <textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={(e) => {
-            // Preserve formatting when pasting
-            e.preventDefault();
-            const pastedText = e.clipboardData.getData('text/plain');
-            const start = textareaRef.current?.selectionStart || 0;
-            const end = textareaRef.current?.selectionEnd || 0;
-            const newText = text.substring(0, start) + pastedText + text.substring(end);
-            setText(newText);
-            // Set cursor position after paste
-            setTimeout(() => {
-              if (textareaRef.current) {
-                const newPosition = start + pastedText.length;
-                textareaRef.current.setSelectionRange(newPosition, newPosition);
-                textareaRef.current.focus();
-              }
-            }, 0);
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              handleSave(improvedText ? "improved" : "raw");
+            }
           }}
-          placeholder="What's on your mind?"
-          className="w-full min-h-[200px] p-4 text-lg text-gray-900 watercolor-card border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 resize-none placeholder:text-gray-400 whitespace-pre-wrap"
-          disabled={isLoading || isImproving || isUploadingImage}
+          onPaste={(e) => {
+            if (e.clipboardData.files.length) {
+              e.preventDefault();
+              addFiles(e.clipboardData.files);
+            }
+          }}
+          placeholder={prompt}
+          aria-label="Journal entry"
+          className="w-full min-h-[180px] bg-transparent px-5 pt-5 pb-2 text-[17px] leading-relaxed resize-none focus:outline-none placeholder:text-slate-400"
+          disabled={isSaving}
         />
-      </div>
 
-      {/* Image upload */}
-      <div className="mb-4">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleImageSelect}
-          className="hidden"
-          id="image-upload"
-          disabled={isLoading || isUploadingImage}
-        />
-        <label
-          htmlFor="image-upload"
-          className="inline-block px-4 py-2 bg-gradient-to-r from-teal-50 to-purple-50 text-gray-700 rounded-lg cursor-pointer hover:from-teal-100 hover:to-purple-100 border border-teal-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          📷 {selectedImage ? "Change Image" : "Add Image"}
-        </label>
-        {selectedImage && (
-          <button
-            onClick={handleRemoveImage}
-            className="ml-2 px-4 py-2 bg-pink-100 text-pink-700 rounded-lg hover:bg-pink-200 border border-pink-200 transition-colors"
-          >
-            Remove
-          </button>
-        )}
-      </div>
-
-      {/* Image preview */}
-      {imagePreview && (
-        <div className="mb-4">
-          <img
-            src={imagePreview}
-            alt="Preview"
-            className="max-w-full max-h-64 rounded-xl border border-teal-200 shadow-sm"
-          />
-        </div>
-      )}
-
-      {/* Action buttons */}
-      <div className="flex gap-3 mb-4">
-        {onImprove && (
-          <button
-            onClick={handleImprove}
-            disabled={!text.trim() || isImproving || isLoading}
-            className="px-6 py-3 bg-gradient-to-r from-teal-500 to-purple-500 text-white rounded-lg font-medium hover:from-teal-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md"
-          >
-            {isImproving ? "Improving..." : "Improve"}
-          </button>
-        )}
-        <button
-          onClick={() => handleSave("raw")}
-          disabled={(!text.trim() && !selectedImage) || isLoading || isUploadingImage}
-          className="px-6 py-3 bg-gradient-to-r from-teal-50 to-purple-50 text-gray-800 rounded-lg font-medium hover:from-teal-100 hover:to-purple-100 border border-teal-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-        >
-          {isUploadingImage ? "Uploading..." : "Save Raw"}
-        </button>
-      </div>
-
-      {/* Preview (side-by-side) */}
-      {showPreview && improvedText && (
-        <div className="mt-6 border-t pt-6">
-          <h3 className="text-lg font-semibold mb-4">Preview</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h4 className="text-sm font-medium text-gray-600 mb-2">Raw</h4>
-              <div className="p-4 watercolor-card rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-100 text-gray-900">
-                {text}
+        {images.length > 0 && (
+          <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
+            {images.map((img) => (
+              <div key={img.id} className="relative shrink-0">
+                <img
+                  src={img.preview}
+                  alt=""
+                  className="h-24 w-24 object-cover rounded-2xl border border-white shadow-sm"
+                />
+                {!isSaving && (
+                  <button
+                    type="button"
+                    onClick={() => removeImage(img.id)}
+                    className="absolute -top-1.5 -right-1.5 h-7 w-7 grid place-items-center rounded-full bg-slate-800/80 text-white shadow"
+                    aria-label="Remove photo"
+                  >
+                    <XIcon size={14} />
+                  </button>
+                )}
               </div>
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-gray-600 mb-2">Improved</h4>
-              <div className="p-4 bg-gradient-to-br from-teal-50 to-purple-50 rounded-xl min-h-[150px] whitespace-pre-wrap border border-teal-200 text-gray-900">
-                {improvedText}
-              </div>
-            </div>
+            ))}
           </div>
-          <div className="flex gap-3 mt-4">
+        )}
+
+        <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+              className="hidden"
+              id="image-upload"
+              disabled={isSaving}
+            />
+            <label
+              htmlFor="image-upload"
+              className={`h-11 px-3.5 rounded-full bg-white/80 border border-teal-200 text-slate-700 flex items-center gap-1.5 cursor-pointer hover:bg-teal-50 ${
+                isSaving || images.length >= MAX_IMAGES ? "opacity-50 pointer-events-none" : ""
+              }`}
+            >
+              <CameraIcon size={19} />
+              <span className="text-sm">Photo</span>
+            </label>
+            <VoiceRecorder
+              disabled={isSaving}
+              onTranscript={(t) => setText((prev) => (prev.trim() ? `${prev.trimEnd()}\n\n${t}` : t))}
+            />
+          </div>
+          <span className="text-xs text-slate-400 tabular-nums pr-1">
+            {words > 0 && `${words} word${words === 1 ? "" : "s"}`}
+            {draftSaved && words > 0 && " · draft saved"}
+          </span>
+        </div>
+      </div>
+
+      {improvedText ? (
+        <div className="mt-4 rounded-3xl border border-purple-200 bg-gradient-to-br from-teal-50/90 via-purple-50/90 to-pink-50/90 p-5 animate-rise-in">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-slate-800 flex items-center gap-1.5">
+              <SparkleIcon size={18} className="text-purple-500" /> Polished version
+            </h3>
+            <button
+              onClick={() => setImprovedText(null)}
+              className="text-sm text-slate-500 px-2 py-1 rounded-full hover:bg-white/70"
+            >
+              Discard
+            </button>
+          </div>
+          <p className="text-[16px] leading-relaxed text-slate-800 whitespace-pre-wrap">{improvedText}</p>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <button
+              onClick={() => handleSave("raw")}
+              disabled={!canSave}
+              className="h-12 rounded-2xl bg-white/90 border border-teal-200 text-slate-700 text-sm font-medium disabled:opacity-50"
+            >
+              Keep mine
+            </button>
             <button
               onClick={() => handleSave("improved")}
-              disabled={isLoading || isUploadingImage}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              disabled={!canSave}
+              className="h-12 rounded-2xl btn-gradient text-sm font-semibold shadow-md disabled:opacity-50"
             >
-              {isUploadingImage ? "Uploading..." : "Save Improved"}
+              Use polished
             </button>
             <button
               onClick={() => handleSave("both")}
-              disabled={isLoading || isUploadingImage}
-              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 transition-all shadow-md"
+              disabled={!canSave}
+              className="h-12 rounded-2xl bg-white/90 border border-purple-200 text-slate-700 text-sm font-medium disabled:opacity-50"
             >
-              {isUploadingImage ? "Uploading..." : "Save Both"}
+              Keep both
             </button>
           </div>
         </div>
+      ) : (
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={handleImprove}
+            disabled={!text.trim() || isImproving || isSaving}
+            className="h-14 px-5 rounded-2xl bg-white/85 border border-purple-200 text-purple-700 font-medium flex items-center gap-2 disabled:opacity-50 hover:bg-purple-50"
+          >
+            {isImproving ? (
+              <span className="h-4 w-4 rounded-full border-2 border-purple-400 border-t-transparent animate-spin" />
+            ) : (
+              <SparkleIcon size={19} />
+            )}
+            {isImproving ? "Polishing…" : "Polish"}
+          </button>
+          <button
+            onClick={() => handleSave("raw")}
+            disabled={!canSave}
+            className="flex-1 h-14 rounded-2xl btn-gradient font-semibold text-[17px] shadow-lg shadow-purple-200/60 disabled:opacity-40 disabled:shadow-none active:scale-[0.99] transition"
+          >
+            {saveStatus || "Save entry"}
+          </button>
+        </div>
       )}
+
+      {improvedText && saveStatus && (
+        <p className="mt-3 text-center text-sm text-slate-500">{saveStatus}</p>
+      )}
+
+      <p className="mt-4 text-center text-xs text-slate-400 hidden md:block">
+        Tip: paste or drop photos straight into the box · ⌘/Ctrl + Enter to save
+      </p>
     </div>
   );
 }
-

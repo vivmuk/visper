@@ -1,412 +1,187 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { useToast } from "@/lib/toast/ToastContext";
+import { apiFetch, errorMessage } from "@/lib/client/api";
+import { friendlyDate, monthKey } from "@/lib/client/format";
+import { entryImages } from "@/lib/entries/shared";
+import ImageViewer from "./ImageViewer";
+import EmptyState from "./ui/EmptyState";
 import type { Entry } from "@/types";
 
-interface ImageGalleryProps {
-  userId: string;
+interface Photo {
+  key: string;
+  url: string;
+  description?: string;
+  entry: Entry;
 }
 
-interface ImageEntry {
-  id: string;
-  imageUrl: string;
-  imageDescription?: string;
-  imageMood?: string;
-  imageScene?: string;
-  imageObjects?: string[];
-  tags?: string[];
-  createdAt: any;
-  rawText?: string;
-  improvedText?: string;
-}
-
-export default function ImageGallery({ userId }: ImageGalleryProps) {
-  const [entries, setEntries] = useState<ImageEntry[]>([]);
+export default function ImageGallery({ onWrite }: { userId?: string; onWrite?: () => void }) {
+  const { user } = useAuth();
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedImage, setSelectedImage] = useState<ImageEntry | null>(null);
-  const [viewMode, setViewMode] = useState<"grid" | "masonry">("masonry");
-  const { user } = useAuth();
-  const { showToast } = useToast();
-
-  const fetchImageEntries = async () => {
-    if (!user) return;
-    
-    setIsLoading(true);
-    setError(null);
-    try {
-      const idToken = await user.getIdToken();
-      
-      // Fetch all entries and filter for images
-      const response = await fetch(`/api/entries?limit=1000`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to fetch entries");
-      }
-
-      const data = await response.json();
-      // Filter for entries with images
-      const imageEntries = (data.entries || []).filter(
-        (entry: any) => entry.imageUrl
-      );
-      setEntries(imageEntries);
-    } catch (err) {
-      console.error("Error fetching images:", err);
-      setError(err instanceof Error ? err.message : "Failed to load images");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [layout, setLayout] = useState<"grid" | "masonry">("grid");
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (user) {
-      fetchImageEntries();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!user) return;
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await apiFetch<{ entries: Entry[] }>(user, "/api/entries?limit=2000");
+        setPhotos(
+          (data.entries || []).flatMap((entry) =>
+            entryImages(entry).map((img, i) => ({
+              key: `${entry.id}-${i}`,
+              url: img.url,
+              description: img.description || (i === 0 ? entry.imageDescription : undefined),
+              entry,
+            }))
+          )
+        );
+      } catch (err) {
+        setError(errorMessage(err, "Couldn't load your photos"));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   }, [user]);
 
-  // Group images by month
-  const imagesByMonth = useMemo(() => {
-    const groups: Map<string, { label: string; images: ImageEntry[] }> = new Map();
-    
-    entries.forEach((entry) => {
-      const date = getEntryDate(entry);
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      const label = date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-      
-      if (!groups.has(key)) {
-        groups.set(key, { label, images: [] });
-      }
-      groups.get(key)!.images.push(entry);
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; items: { photo: Photo; index: number }[] }[] = [];
+    photos.forEach((photo, index) => {
+      const { key, label } = monthKey(photo.entry.createdAt);
+      const last = out[out.length - 1];
+      if (last && last.key === key) last.items.push({ photo, index });
+      else out.push({ key, label, items: [{ photo, index }] });
     });
-    
-    return Array.from(groups.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([key, value]) => ({ key, ...value }));
-  }, [entries]);
-
-  function getEntryDate(entry: ImageEntry): Date {
-    const timestamp = entry.createdAt as any;
-    try {
-      if (!timestamp) return new Date(0);
-      if (typeof timestamp.toDate === "function") return timestamp.toDate();
-      if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
-      if (timestamp._seconds) return new Date(timestamp._seconds * 1000);
-      return new Date(timestamp);
-    } catch {
-      return new Date(0);
-    }
-  }
-
-  const formatDate = (timestamp: any) => {
-    const date = getEntryDate({ createdAt: timestamp } as ImageEntry);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+    return out;
+  }, [photos]);
 
   if (isLoading) {
     return (
-      <div className="text-center py-12">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-        <p className="mt-4 text-gray-500">Loading images...</p>
+      <div className="grid grid-cols-3 gap-1.5" aria-busy="true">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div key={i} className="skeleton aspect-square rounded-xl" />
+        ))}
       </div>
     );
   }
 
   if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-        <strong className="font-semibold">Error:</strong> {error}
-      </div>
-    );
+    return <EmptyState art="offline" title="Couldn't load your photos">{error}</EmptyState>;
   }
 
-  if (entries.length === 0) {
+  if (photos.length === 0) {
     return (
-      <div className="text-center py-12">
-        <div className="text-6xl mb-4">🖼️</div>
-        <p className="text-gray-500 text-lg">No images uploaded yet.</p>
-        <p className="text-gray-400 text-sm mt-2">
-          Upload images with your entries to see them here!
-        </p>
-      </div>
+      <EmptyState
+        art="empty-gallery"
+        title="No photos yet"
+        action={
+          onWrite && (
+            <button onClick={onWrite} className="h-12 px-6 rounded-2xl btn-gradient font-semibold shadow-md">
+              Add a photo
+            </button>
+          )
+        }
+      >
+        Photos you add to entries collect here, with AI descriptions you can search.
+      </EmptyState>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-800">Image Gallery</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {entries.length} image{entries.length !== 1 ? "s" : ""} in your collection
-          </p>
-        </div>
-        
-        {/* View toggle */}
-        <div className="flex gap-2 border rounded-lg p-1">
-          <button
-            onClick={() => setViewMode("masonry")}
-            className={`px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
-              viewMode === "masonry"
-                ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white"
-                : "text-gray-600 hover:bg-purple-50"
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z" />
-            </svg>
-            Masonry
-          </button>
-          <button
-            onClick={() => setViewMode("grid")}
-            className={`px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
-              viewMode === "grid"
-                ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white"
-                : "text-gray-600 hover:bg-purple-50"
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-            Grid
-          </button>
+    <div className="animate-rise-in">
+      <div className="flex items-center justify-between mb-4 px-1">
+        <p className="text-sm text-slate-500">
+          {photos.length} photo{photos.length === 1 ? "" : "s"}
+        </p>
+        <div className="flex p-1 rounded-full bg-white/70 border border-white">
+          {(["grid", "masonry"] as const).map((l) => (
+            <button
+              key={l}
+              onClick={() => setLayout(l)}
+              aria-pressed={layout === l}
+              className={`h-8 px-3.5 rounded-full text-sm ${
+                layout === l ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-sm" : "text-slate-600"
+              }`}
+            >
+              {l === "grid" ? "Grid" : "Collage"}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Images by Month */}
-      {imagesByMonth.map((monthGroup) => (
-        <div key={monthGroup.key} className="space-y-4">
-          {/* Month header */}
-          <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-gray-700">{monthGroup.label}</h3>
-            <span className="text-sm text-gray-400">
-              {monthGroup.images.length} image{monthGroup.images.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
-          {/* Image grid */}
-          {viewMode === "masonry" ? (
-            <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
-              {monthGroup.images.map((image) => (
-                <div
-                  key={image.id}
-                  className="break-inside-avoid group cursor-pointer"
-                  onClick={() => setSelectedImage(image)}
-                >
-                  <div className="relative rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-gradient-to-br from-purple-50 to-pink-50">
-                    <img
-                      src={image.imageUrl}
-                      alt={image.imageDescription || "Gallery image"}
-                      className="w-full h-auto object-cover"
-                      loading="lazy"
-                    />
-                    {/* Overlay on hover */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
-                      <p className="text-white text-xs font-medium truncate">
-                        {formatDate(image.createdAt)}
-                      </p>
-                      {image.imageMood && (
-                        <p className="text-white/80 text-xs truncate">
-                          {image.imageMood}
-                        </p>
-                      )}
-                    </div>
-                    {/* Tags indicator */}
-                    {image.tags && image.tags.length > 0 && (
-                      <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm text-purple-600 text-xs px-2 py-1 rounded-full font-medium shadow-md">
-                        {image.tags.length} tag{image.tags.length !== 1 ? "s" : ""}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {monthGroup.images.map((image) => (
-                <div
-                  key={image.id}
-                  className="group cursor-pointer"
-                  onClick={() => setSelectedImage(image)}
-                >
-                  <div className="relative aspect-square rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 bg-gradient-to-br from-purple-50 to-pink-50">
-                    <img
-                      src={image.imageUrl}
-                      alt={image.imageDescription || "Gallery image"}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                    {/* Overlay on hover */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
-                      <p className="text-white text-xs font-medium truncate">
-                        {formatDate(image.createdAt)}
-                      </p>
-                      {image.imageMood && (
-                        <p className="text-white/80 text-xs truncate">
-                          {image.imageMood}
-                        </p>
-                      )}
-                    </div>
-                    {/* Tags indicator */}
-                    {image.tags && image.tags.length > 0 && (
-                      <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm text-purple-600 text-xs px-2 py-1 rounded-full font-medium shadow-md">
-                        {image.tags.length} tag{image.tags.length !== 1 ? "s" : ""}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-
-      {/* Lightbox Modal */}
-      {selectedImage && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm"
-          onClick={() => setSelectedImage(null)}
-        >
-          <div
-            className="relative max-w-5xl w-full max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close button */}
-            <button
-              onClick={() => setSelectedImage(null)}
-              className="absolute top-4 right-4 z-10 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-lg hover:bg-white transition-colors"
-            >
-              <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-
-            <div className="flex flex-col lg:flex-row h-full max-h-[90vh]">
-              {/* Image */}
-              <div className="lg:flex-1 bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4 lg:p-8">
-                <img
-                  src={selectedImage.imageUrl}
-                  alt={selectedImage.imageDescription || "Gallery image"}
-                  className="max-w-full max-h-[60vh] lg:max-h-[80vh] object-contain rounded-lg shadow-2xl"
-                />
-              </div>
-
-              {/* Info panel */}
-              <div className="lg:w-80 p-6 overflow-y-auto bg-white">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Image Details</h3>
-                
-                <div className="space-y-4">
-                  {/* Date */}
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Date</p>
-                    <p className="text-sm text-gray-800">{formatDate(selectedImage.createdAt)}</p>
-                  </div>
-
-                  {/* Description */}
-                  {selectedImage.imageDescription && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Description</p>
-                      <p className="text-sm text-gray-700">{selectedImage.imageDescription}</p>
-                    </div>
-                  )}
-
-                  {/* Scene */}
-                  {selectedImage.imageScene && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Scene</p>
-                      <p className="text-sm text-gray-700">{selectedImage.imageScene}</p>
-                    </div>
-                  )}
-
-                  {/* Mood */}
-                  {selectedImage.imageMood && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Mood</p>
-                      <p className="text-sm text-gray-700">{selectedImage.imageMood}</p>
-                    </div>
-                  )}
-
-                  {/* Objects */}
-                  {selectedImage.imageObjects && selectedImage.imageObjects.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Objects</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedImage.imageObjects.map((obj, idx) => (
-                          <span
-                            key={idx}
-                            className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full"
-                          >
-                            {obj}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Tags */}
-                  {selectedImage.tags && selectedImage.tags.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Tags</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedImage.tags.map((tag, idx) => (
-                          <span
-                            key={idx}
-                            className="text-xs bg-gradient-to-r from-teal-100 to-purple-100 text-teal-700 px-2 py-1 rounded-full border border-teal-200"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Entry text */}
-                  {(selectedImage.improvedText || selectedImage.rawText) && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Entry Notes</p>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {selectedImage.improvedText || selectedImage.rawText}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Download button */}
-                <div className="mt-6 pt-4 border-t border-gray-100">
-                  <a
-                    href={selectedImage.imageUrl}
-                    download
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-500 text-white text-sm font-medium rounded-lg hover:shadow-lg transition"
+      <div className="space-y-6">
+        {groups.map((group) => (
+          <section key={group.key}>
+            <h3 className="mb-2 px-1 text-sm font-semibold uppercase tracking-wider text-slate-500">
+              {group.label} <span className="font-normal normal-case tracking-normal text-slate-400">· {group.items.length}</span>
+            </h3>
+            {layout === "grid" ? (
+              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5">
+                {group.items.map(({ photo, index }) => (
+                  <button
+                    key={photo.key}
+                    onClick={() => setOpenIndex(index)}
+                    className="relative aspect-square overflow-hidden rounded-xl bg-gradient-to-br from-teal-50 to-pink-50"
+                    aria-label={photo.description || "Open photo"}
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Download Image
-                  </a>
-                </div>
+                    <img src={photo.url} alt={photo.description || ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                  </button>
+                ))}
               </div>
-            </div>
-          </div>
-        </div>
+            ) : (
+              <div className="columns-2 md:columns-3 gap-2 [&>*]:mb-2">
+                {group.items.map(({ photo, index }) => (
+                  <button
+                    key={photo.key}
+                    onClick={() => setOpenIndex(index)}
+                    className="block w-full break-inside-avoid overflow-hidden rounded-2xl bg-gradient-to-br from-teal-50 to-pink-50 shadow-sm"
+                    aria-label={photo.description || "Open photo"}
+                  >
+                    <img src={photo.url} alt={photo.description || ""} loading="lazy" decoding="async" className="w-full h-auto" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
+
+      {openIndex !== null && (
+        <ImageViewer
+          startIndex={openIndex}
+          onClose={() => setOpenIndex(null)}
+          images={photos.map((p) => ({
+            url: p.url,
+            description: p.description,
+            caption: friendlyDate(p.entry.createdAt),
+            details: <PhotoDetails entry={p.entry} />,
+          }))}
+        />
       )}
     </div>
   );
 }
 
+function PhotoDetails({ entry }: { entry: Entry }) {
+  const text = entry.improvedText || entry.rawText;
+  return (
+    <div className="mt-3 space-y-2 text-white/80">
+      {text && <p className="whitespace-pre-wrap text-white/90">{text}</p>}
+      {entry.imageMood && <p><span className="text-white/50">Mood · </span>{entry.imageMood}</p>}
+      {entry.imageScene && <p><span className="text-white/50">Scene · </span>{entry.imageScene}</p>}
+      {entry.tags?.length ? (
+        <p className="flex flex-wrap gap-1.5 pt-1">
+          {entry.tags.map((t) => (
+            <span key={t} className="px-2 py-0.5 rounded-full bg-white/15 text-xs">#{t}</span>
+          ))}
+        </p>
+      ) : null}
+    </div>
+  );
+}

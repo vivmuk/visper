@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import BottomSheet from "./ui/BottomSheet";
 
 interface DeleteConfirmationDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
   entryTitle?: string;
+  isDeleting?: boolean;
 }
 
 export default function DeleteConfirmationDialog({
@@ -14,77 +15,31 @@ export default function DeleteConfirmationDialog({
   onClose,
   onConfirm,
   entryTitle,
+  isDeleting,
 }: DeleteConfirmationDialogProps) {
-  const [step, setStep] = useState<1 | 2>(1);
-
-  if (!isOpen) return null;
-
-  const handleConfirm = () => {
-    if (step === 1) {
-      setStep(2);
-    } else {
-      onConfirm();
-      setStep(1); // Reset for next time
-    }
-  };
-
-  const handleClose = () => {
-    setStep(1); // Reset step when closing
-    onClose();
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
-        {step === 1 ? (
-          <>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Delete Entry?
-            </h3>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to delete this entry? This action cannot be undone.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleClose}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirm}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h3 className="text-xl font-semibold text-red-600 mb-2">
-              Final Confirmation
-            </h3>
-            <p className="text-gray-600 mb-6">
-              This will permanently delete this entry. Are you absolutely sure?
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleClose}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirm}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold"
-              >
-                Yes, Delete Forever
-              </button>
-            </div>
-          </>
-        )}
+    <BottomSheet open={isOpen} onClose={onClose} title="Delete this entry?">
+      {entryTitle && (
+        <p className="text-sm text-slate-500 italic line-clamp-2 mb-2">&ldquo;{entryTitle}&rdquo;</p>
+      )}
+      <p className="text-slate-600">
+        It will be removed from your journal along with its photos. This can&apos;t be undone.
+      </p>
+      <div className="mt-6 mb-2 flex flex-col-reverse sm:flex-row gap-3">
+        <button
+          onClick={onClose}
+          className="h-12 flex-1 rounded-2xl bg-slate-100 text-slate-700 font-medium hover:bg-slate-200"
+        >
+          Keep it
+        </button>
+        <button
+          onClick={onConfirm}
+          disabled={isDeleting}
+          className="h-12 flex-1 rounded-2xl bg-rose-600 text-white font-semibold hover:bg-rose-700 disabled:opacity-60"
+        >
+          {isDeleting ? "Deleting…" : "Delete forever"}
+        </button>
       </div>
-    </div>
+    </BottomSheet>
   );
 }
-

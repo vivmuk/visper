@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { User, onAuthStateChanged, signInWithPopup, signOut, GoogleAuthProvider } from "firebase/auth";
+import { User, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 
 interface AuthContextType {
@@ -30,7 +30,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
+      // Some mobile browsers / installed PWAs block popups: use a redirect instead.
+      if (error?.code === "auth/popup-blocked" || error?.code === "auth/operation-not-supported-in-this-environment") {
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+      if (error?.code === "auth/popup-closed-by-user" || error?.code === "auth/cancelled-popup-request") return;
       console.error("Error signing in with Google:", error);
       throw error;
     }

@@ -4,6 +4,8 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getUserIdFromRequest } from "@/lib/auth/middleware";
 import { buildHistoryExportHtml } from "@/lib/export/buildHistoryExportHtml";
 
+
+export const dynamic = "force-dynamic";
 const MAX_ENTRIES = 2000;
 
 export async function GET(request: Request) {

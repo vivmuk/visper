@@ -43,3 +43,6 @@ firestore-debug.log
 # Service account keys (IMPORTANT - never commit these!)
 *-firebase-adminsdk-*.json
 
+
+# Raw Venice art outputs (optimized copies live in public/art/)
+/public/art/_raw/
