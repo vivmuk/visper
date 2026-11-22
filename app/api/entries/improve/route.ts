@@ -1,16 +1,26 @@
 // API Route: POST /api/entries/improve
 // Improves journal entry text using Venice AI
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth/middleware";
 import { improveEntry } from "@/lib/venice/client";
 import type { ImproveEntryRequest, ImproveEntryResponse } from "@/types";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body: ImproveEntryRequest = await request.json();
 
     if (!body.rawText || body.rawText.trim().length === 0) {
       return NextResponse.json(
         { error: "rawText is required and cannot be empty" },
+        { status: 400 }
+      );
+    }
+    if (body.rawText.length > 20000) {
+      return NextResponse.json(
+        { error: "That entry is too long to improve in one go (20,000 characters max)" },
         { status: 400 }
       );
     }

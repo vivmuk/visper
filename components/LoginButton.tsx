@@ -8,9 +8,7 @@ export default function LoginButton() {
 
   if (loading) {
     return (
-      <div className="px-4 py-2 text-gray-600">
-        Loading...
-      </div>
+      <div className="w-10 h-10 rounded-full bg-white/60 animate-pulse" aria-label="Loading" />
     );
   }
 
@@ -20,8 +18,8 @@ export default function LoginButton() {
 
   return (
     <button
-      onClick={signInWithGoogle}
-      className="px-6 py-3 bg-white text-gray-700 border-2 border-teal-300 rounded-lg hover:bg-teal-50 hover:border-teal-400 flex items-center gap-3 shadow-sm transition-all font-medium"
+      onClick={() => signInWithGoogle().catch(() => undefined)}
+      className="h-14 px-7 bg-white text-slate-700 border border-teal-200 rounded-2xl hover:bg-teal-50 flex items-center gap-3 shadow-lg shadow-teal-100/70 transition-all font-semibold text-[16px]"
     >
       <svg className="w-5 h-5" viewBox="0 0 24 24">
         <path

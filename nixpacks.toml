@@ -1,6 +1,6 @@
 # Nixpacks configuration for Railway
 [phases.setup]
-nixPkgs = ["nodejs-18_x", "npm-9_x"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = ["npm ci --include=dev"]

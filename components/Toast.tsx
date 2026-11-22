@@ -19,17 +19,17 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       onDismiss(toast.id);
-    }, 5000); // Auto-dismiss after 5 seconds
+    }, toast.type === "error" ? 7000 : 3500); // Errors stay a little longer
 
     return () => clearTimeout(timer);
-  }, [toast.id, onDismiss]);
+  }, [toast.id, toast.type, onDismiss]);
 
   const bgColor =
     toast.type === "success"
-      ? "bg-green-50 border-green-200 text-green-800"
+      ? "bg-emerald-50/95 border-emerald-200 text-emerald-800"
       : toast.type === "error"
-      ? "bg-red-50 border-red-200 text-red-800"
-      : "bg-blue-50 border-blue-200 text-blue-800";
+      ? "bg-rose-50/95 border-rose-200 text-rose-800"
+      : "bg-sky-50/95 border-sky-200 text-sky-800";
 
   const icon =
     toast.type === "success" ? (
@@ -60,13 +60,13 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
 
   return (
     <div
-      className={`${bgColor} border rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 min-w-[300px] max-w-md animate-in slide-in-from-top-5 fade-in-0`}
+      className={`${bgColor} border rounded-2xl shadow-lg backdrop-blur px-4 py-3 flex items-center gap-3 w-[calc(100vw-2rem)] max-w-sm animate-rise-in`}
     >
       <div className="flex-shrink-0">{icon}</div>
       <p className="flex-1 text-sm font-medium">{toast.message}</p>
       <button
         onClick={() => onDismiss(toast.id)}
-        className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+        className="flex-shrink-0 -mr-1 p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
         aria-label="Dismiss"
       >
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

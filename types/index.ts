@@ -4,6 +4,17 @@ export type EntryType = "note" | "url" | "image";
 export type EntrySource = "raw" | "improved" | "both";
 export type Sentiment = "negative" | "neutral" | "positive";
 
+export interface EntryImage {
+  url: string; // Private download-token URL (or legacy public URL)
+  storagePath: string; // e.g. entries/{userId}/{uuid}.jpg
+  filename?: string;
+  size?: number;
+  contentType?: string;
+  width?: number;
+  height?: number;
+  description?: string; // AI description of this specific image
+}
+
 export interface Entry {
   id: string;
   userId: string;
@@ -15,7 +26,7 @@ export interface Entry {
   improvedText?: string;
   
   // AI metadata
-  aiModel?: string; // e.g., "venice:gpt-X"
+  aiModel?: string; // Venice model used for tagging, e.g. "claude-haiku-5-5"
   aiPromptTemplateId?: string;
   
   // Timestamps
@@ -30,12 +41,12 @@ export interface Entry {
   sentiment?: Sentiment;
   qualityScore?: number; // 0-1
   
-  // Enriched metadata (from GLM 4.6 / Mistral)
+  // Enriched metadata (AI-extracted)
   topics?: string[]; // Main themes or topics
   keywords?: string[]; // Important keywords
   category?: string; // Entry category (work, personal, travel, etc.)
   
-  // Image-specific enriched metadata (from Mistral)
+  // Image-specific enriched metadata (AI-extracted, from the first image)
   imageDescription?: string; // Detailed image description
   imageObjects?: string[]; // Objects detected in image
   imageScene?: string; // Scene description
@@ -59,6 +70,9 @@ export interface Entry {
   }>;
   
   // Image-specific fields
+  // All images attached to the entry. imageUrl/imageStoragePath/imageMetadata
+  // mirror the first image for older entries and the HTML export.
+  images?: EntryImage[];
   imageUrl?: string;
   imageStoragePath?: string;
   imageMetadata?: {
@@ -86,11 +100,14 @@ export interface User {
   lastLoginAt?: FirebaseFirestore.Timestamp;
 }
 
+// Stored in the `embeddings` collection, keyed by entry ID.
 export interface Embedding {
-  id: string;
   entryId: string;
-  vector: number[]; // 1536 dimensions for OpenAI-compatible embeddings
-  createdAt: FirebaseFirestore.Timestamp;
+  userId: string;
+  vector: number[]; // VENICE_EMBEDDING_DIMENSIONS of VENICE_EMBEDDING_MODEL
+  model: string;
+  textHash: string; // Detects when the entry text changed
+  updatedAt: FirebaseFirestore.Timestamp;
 }
 
 // API Request/Response types
@@ -124,6 +141,8 @@ export interface CreateEntryRequest {
   urlDomain?: string;
   urlAuthor?: string;
   urlChecksum?: string;
+  images?: EntryImage[];
+  // Legacy single-image fields (still accepted)
   imageUrl?: string;
   imageStoragePath?: string;
   imageMetadata?: {
@@ -136,6 +155,7 @@ export interface CreateEntryRequest {
   tags?: string[];
   timezone?: string;
   device?: string;
+  writtenAt?: string; // ISO time an offline entry was written
 }
 
 export interface CreateEntryResponse {
@@ -176,5 +196,48 @@ export interface SearchRequest {
 export interface SearchResponse {
   entries: Entry[];
   total: number;
+}
+
+export interface UpdateEntryRequest {
+  rawText?: string;
+  improvedText?: string;
+  tags?: string[];
+}
+
+export interface AskSource {
+  id: string;
+  date: string | null;
+  snippet: string;
+  type: EntryType;
+}
+
+export interface AskResponse {
+  answer: string;
+  sources: AskSource[];
+}
+
+export interface Reflection {
+  title: string;
+  summary: string;
+  themes: string[];
+  mood: string;
+  highlights: string[];
+  prompt: string;
+  entryCount: number;
+  period: "week" | "month";
+}
+
+export interface HealthCheck {
+  ok: boolean;
+  message?: string;
+}
+
+export interface HealthResponse {
+  ok: boolean;
+  checks: {
+    firestore: HealthCheck;
+    storage: HealthCheck;
+    venice: HealthCheck & { balanceUsd?: number; balanceDiem?: number };
+  };
 }
 

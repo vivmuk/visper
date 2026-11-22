@@ -2,193 +2,206 @@
 // API Route: GET /api/entries - List entries (with optional filters)
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
-import { FieldValue } from "firebase-admin/firestore";
-import { getUserIdFromRequest } from "@/lib/auth/middleware";
-import { extractTextMetadata, extractImageMetadata } from "@/lib/venice/client";
-import type { CreateEntryRequest, Entry, SearchRequest } from "@/types";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { requireUser } from "@/lib/auth/middleware";
+import {
+  extractTextMetadata,
+  extractImageMetadata,
+  VENICE_FAST_MODEL,
+} from "@/lib/venice/client";
+import {
+  buildDownloadUrl,
+  downloadAsDataUrl,
+  isUserPath,
+  MAX_IMAGES_PER_ENTRY,
+} from "@/lib/firebase/storage";
+import { ENTRIES, normalizeTags, toDate, tryEmbedEntry } from "@/lib/entries/server";
+import type { CreateEntryRequest, Entry, EntryImage } from "@/types";
+
+/** Validates images from the client: they must live in the user's folder. */
+function sanitizeImages(userId: string, body: CreateEntryRequest): EntryImage[] | string {
+  const incoming: Partial<EntryImage>[] = body.images?.length
+    ? body.images
+    : body.imageUrl
+    ? [
+        {
+          url: body.imageUrl,
+          storagePath: body.imageStoragePath,
+          filename: body.imageMetadata?.filename,
+          size: body.imageMetadata?.size,
+          contentType: body.imageMetadata?.contentType,
+        },
+      ]
+    : [];
+
+  if (incoming.length > MAX_IMAGES_PER_ENTRY) {
+    return `An entry can have at most ${MAX_IMAGES_PER_ENTRY} images`;
+  }
+
+  const images: EntryImage[] = [];
+  for (const img of incoming) {
+    if (!isUserPath(userId, img.storagePath) || typeof img.url !== "string") {
+      return "Invalid image reference";
+    }
+    // The URL must point at that exact object (token URL from /api/upload).
+    if (!img.url.startsWith(buildDownloadUrl(img.storagePath, ""))) {
+      return "Invalid image URL";
+    }
+    images.push({
+      url: img.url,
+      storagePath: img.storagePath,
+      ...(img.filename ? { filename: String(img.filename).slice(0, 200) } : {}),
+      ...(typeof img.size === "number" ? { size: img.size } : {}),
+      ...(img.contentType ? { contentType: String(img.contentType) } : {}),
+      ...(typeof img.width === "number" ? { width: img.width } : {}),
+      ...(typeof img.height === "number" ? { height: img.height } : {}),
+    });
+  }
+  return images;
+}
+
+/**
+ * Entries written offline are synced later; keep the time they were written
+ * (accepted only if it's in the last 30 days and not in the future).
+ */
+function writtenAt(body: CreateEntryRequest): Timestamp | null {
+  if (!body.writtenAt) return null;
+  const d = new Date(body.writtenAt);
+  const now = Date.now();
+  if (isNaN(d.getTime()) || d.getTime() > now + 60_000 || d.getTime() < now - 30 * 86400000) {
+    return null;
+  }
+  return Timestamp.fromDate(d);
+}
 
 // POST /api/entries - Create entry
 export async function POST(request: NextRequest) {
+  const auth = await requireUser(request);
+  if (auth instanceof NextResponse) return auth;
+  const { userId } = auth;
+
   try {
-    // Get userId from Firebase ID token
-    const userId = await getUserIdFromRequest(request);
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Authentication required. Please sign in." },
-        { status: 401 }
-      );
-    }
-
     const body: CreateEntryRequest = await request.json();
-
-    if (!body.type) {
-      return NextResponse.json({ error: "type is required" }, { status: 400 });
+    const images = sanitizeImages(userId, body);
+    if (typeof images === "string") {
+      return NextResponse.json({ error: images }, { status: 400 });
     }
 
-    if (body.type === "note" && !body.rawText && !body.improvedText) {
-      return NextResponse.json(
-        { error: "rawText or improvedText is required for note entries" },
-        { status: 400 }
-      );
+    const type = body.type === "url" ? "url" : images.length > 0 ? "image" : "note";
+    const rawText = typeof body.rawText === "string" ? body.rawText : undefined;
+    const improvedText = typeof body.improvedText === "string" ? body.improvedText : undefined;
+
+    if (type === "note" && !rawText?.trim() && !improvedText?.trim()) {
+      return NextResponse.json({ error: "Write something or add a photo first" }, { status: 400 });
+    }
+    if (type === "url" && !body.url) {
+      return NextResponse.json({ error: "url is required for link entries" }, { status: 400 });
     }
 
-    if (body.type === "url" && !body.url) {
-      return NextResponse.json(
-        { error: "url is required for url entries" },
-        { status: 400 }
-      );
+    // --- AI enrichment (never blocks saving) --------------------------------
+    let textToAnalyze = improvedText || rawText || "";
+    if (type === "url" && body.summary) {
+      const keyPoints = body.keyPoints?.length ? `\n\nKey Points:\n${body.keyPoints.join("\n")}` : "";
+      const note = rawText?.trim() ? `\n\nMy notes: ${rawText.trim()}` : "";
+      textToAnalyze = `${body.urlTitle ? body.urlTitle + "\n\n" : ""}${body.summary}${keyPoints}${note}`;
     }
 
-    if (body.type === "image" && !body.imageUrl) {
-      return NextResponse.json(
-        { error: "imageUrl is required for image entries" },
-        { status: 400 }
-      );
-    }
+    const [textMeta, imageMetas] = await Promise.all([
+      textToAnalyze.trim()
+        ? extractTextMetadata(textToAnalyze).catch((error) => {
+            console.error("Text metadata extraction failed (continuing):", error);
+            return null;
+          })
+        : Promise.resolve(null),
+      Promise.all(
+        images.map((img) =>
+          downloadAsDataUrl(img.storagePath)
+            .then((dataUrl) => extractImageMetadata(dataUrl))
+            .catch((error) => {
+              console.error(`Image metadata extraction failed for ${img.storagePath}:`, error);
+              return null;
+            })
+        )
+      ),
+    ]);
 
-    // Verify Firebase Admin is initialized
-    try {
-      // Test Firebase connection by accessing adminDb
-      const testCollection = adminDb.collection("entries");
-      console.log("Firebase Admin initialized successfully");
-    } catch (firebaseError) {
-      console.error("Firebase Admin initialization error:", firebaseError);
-      return NextResponse.json(
-        {
-          error: "Firebase Admin not configured. Check environment variables.",
-          details: firebaseError instanceof Error ? firebaseError.message : "Unknown error",
-        },
-        { status: 500 }
-      );
-    }
+    images.forEach((img, i) => {
+      if (imageMetas[i]?.description) img.description = imageMetas[i]!.description;
+    });
+    const firstImageMeta = imageMetas.find(Boolean) || null;
 
-    // Extract enriched metadata using Venice AI
-    let enrichedMetadata: any = {};
-    try {
-      if (body.type === "note" || body.type === "url") {
-        // Extract metadata from text using GLM 4.6
-        // For URL entries, use summary if rawText/improvedText not available
-        let textToAnalyze = body.improvedText || body.rawText || "";
-        if (body.type === "url" && !textToAnalyze && body.summary) {
-          // For URL entries, analyze the summary text along with key points
-          const keyPointsText = body.keyPoints ? "\n\nKey Points:\n" + body.keyPoints.join("\n") : "";
-          textToAnalyze = body.summary + keyPointsText;
-        }
-        
-        if (textToAnalyze && textToAnalyze.trim().length > 0) {
-          console.log("Extracting text metadata using GLM 4.6...", { 
-            textLength: textToAnalyze.length,
-            type: body.type 
-          });
-          try {
-            const textMeta = await extractTextMetadata(textToAnalyze);
-            console.log("Successfully extracted metadata:", {
-              tagsCount: textMeta.tags?.length || 0,
-              entitiesCount: textMeta.entities?.length || 0,
-              topicsCount: textMeta.topics?.length || 0,
-            });
-            enrichedMetadata = {
-              tags: [...(body.tags || []), ...(textMeta.tags || [])], // Merge user tags with AI tags
-              entities: textMeta.entities || [],
-              topics: textMeta.topics || [],
-              keywords: textMeta.keywords || [],
-              sentiment: textMeta.sentiment,
-              category: textMeta.category,
-              aiModel: "glm-4-6",
-            };
-          } catch (extractError) {
-            console.error("Error in extractTextMetadata:", extractError);
-            throw extractError; // Re-throw to be caught by outer catch
-          }
-        } else {
-          console.log("Skipping metadata extraction - no text to analyze", {
-            hasImprovedText: !!body.improvedText,
-            hasRawText: !!body.rawText,
-            hasSummary: !!body.summary,
-            type: body.type,
-          });
-        }
-      } else if (body.type === "image" && body.imageUrl) {
-        // Extract metadata from image using Mistral
-        console.log("Extracting image metadata using Mistral...");
-        const imageMeta = await extractImageMetadata(body.imageUrl);
-        enrichedMetadata = {
-          tags: [...(body.tags || []), ...(imageMeta.tags || [])], // Merge user tags with AI tags
-          imageDescription: imageMeta.description,
-          imageObjects: imageMeta.objects || [],
-          imageScene: imageMeta.scene,
-          imageMood: imageMeta.mood,
-          imageColors: imageMeta.colors || [],
-          category: imageMeta.category,
-          aiModel: "mistral-large-latest",
-        };
-      }
-    } catch (metadataError) {
-      console.error("Error extracting metadata (continuing without it):", metadataError);
-      // Continue without enriched metadata if extraction fails
-    }
+    const tags = normalizeTags([
+      ...(body.tags || []),
+      ...(textMeta?.tags || []),
+      ...imageMetas.flatMap((m) => m?.tags || []),
+    ]);
 
-    // Create entry document
-    const entryData: any = {
+    // --- Build the document --------------------------------------------------
+    const entryData: Record<string, any> = {
       userId,
-      type: body.type,
-      source: body.source || (body.improvedText ? "improved" : "raw"),
-      createdAt: FieldValue.serverTimestamp() as any,
-      updatedAt: FieldValue.serverTimestamp() as any,
-      tags: enrichedMetadata.tags || body.tags || [],
-      entities: enrichedMetadata.entities || [],
+      type,
+      source: body.source || (improvedText ? "improved" : "raw"),
+      createdAt: writtenAt(body) || FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      tags,
+      entities: textMeta?.entities || [],
     };
 
-    // Add enriched metadata fields
-    if (enrichedMetadata.topics) entryData.topics = enrichedMetadata.topics;
-    if (enrichedMetadata.keywords) entryData.keywords = enrichedMetadata.keywords;
-    if (enrichedMetadata.sentiment) entryData.sentiment = enrichedMetadata.sentiment;
-    if (enrichedMetadata.category) entryData.category = enrichedMetadata.category;
-    if (enrichedMetadata.aiModel) entryData.aiModel = enrichedMetadata.aiModel;
-    
-    // Image-specific enriched metadata
-    if (enrichedMetadata.imageDescription) entryData.imageDescription = enrichedMetadata.imageDescription;
-    if (enrichedMetadata.imageObjects) entryData.imageObjects = enrichedMetadata.imageObjects;
-    if (enrichedMetadata.imageScene) entryData.imageScene = enrichedMetadata.imageScene;
-    if (enrichedMetadata.imageMood) entryData.imageMood = enrichedMetadata.imageMood;
-    if (enrichedMetadata.imageColors) entryData.imageColors = enrichedMetadata.imageColors;
+    if (textMeta || firstImageMeta) entryData.aiModel = VENICE_FAST_MODEL;
+    if (textMeta?.topics) entryData.topics = textMeta.topics;
+    if (textMeta?.keywords) entryData.keywords = textMeta.keywords;
+    if (textMeta?.sentiment) entryData.sentiment = textMeta.sentiment;
+    const category = textMeta?.category || firstImageMeta?.category;
+    if (category) entryData.category = category;
 
-    // Only include fields that are defined (Firestore doesn't allow undefined)
-    if (body.rawText !== undefined) entryData.rawText = body.rawText;
-    if (body.improvedText !== undefined) entryData.improvedText = body.improvedText;
-    if (body.timezone !== undefined) entryData.timezone = body.timezone;
-    if (body.device !== undefined) entryData.device = body.device;
-    if (body.url !== undefined) entryData.url = body.url;
-    if (body.imageUrl !== undefined) entryData.imageUrl = body.imageUrl;
-    if (body.imageStoragePath !== undefined) entryData.imageStoragePath = body.imageStoragePath;
-    if (body.imageMetadata !== undefined) entryData.imageMetadata = body.imageMetadata;
+    if (firstImageMeta) {
+      entryData.imageDescription = firstImageMeta.description;
+      entryData.imageObjects = firstImageMeta.objects || [];
+      entryData.imageScene = firstImageMeta.scene;
+      if (firstImageMeta.mood) entryData.imageMood = firstImageMeta.mood;
+      entryData.imageColors = firstImageMeta.colors || [];
+    }
 
-    console.log("Attempting to save entry to Firestore with enriched metadata...");
-    const docRef = await adminDb.collection("entries").add(entryData);
-    console.log("Entry saved successfully with ID:", docRef.id);
+    if (images.length > 0) {
+      entryData.images = images;
+      // Mirror the first image into the legacy fields for older readers.
+      entryData.imageUrl = images[0].url;
+      entryData.imageStoragePath = images[0].storagePath;
+      entryData.imageMetadata = {
+        filename: images[0].filename || "image",
+        size: images[0].size || 0,
+        contentType: images[0].contentType || "image/jpeg",
+      };
+    }
 
-    // Fetch the created document to return it
+    if (rawText !== undefined) entryData.rawText = rawText;
+    if (improvedText !== undefined) entryData.improvedText = improvedText;
+    if (body.timezone) entryData.timezone = String(body.timezone).slice(0, 100);
+    if (body.device) entryData.device = String(body.device).slice(0, 300);
+
+    if (type === "url") {
+      entryData.url = body.url;
+      if (body.urlTitle) entryData.urlTitle = body.urlTitle;
+      if (body.urlDomain) entryData.urlDomain = body.urlDomain;
+      if (body.urlAuthor) entryData.urlAuthor = body.urlAuthor;
+      if (body.urlChecksum) entryData.urlChecksum = body.urlChecksum;
+      if (body.summary) entryData.summary = body.summary;
+      if (body.keyPoints?.length) entryData.keyPoints = body.keyPoints;
+      if (body.quotes?.length) entryData.quotes = body.quotes;
+      entryData.urlFetchedAt = FieldValue.serverTimestamp();
+    }
+
+    const docRef = await adminDb.collection(ENTRIES).add(entryData);
     const doc = await docRef.get();
     const entry = { id: doc.id, ...doc.data() } as Entry;
+
+    await tryEmbedEntry(entry);
 
     return NextResponse.json({ id: doc.id, entry });
   } catch (error) {
     console.error("Error creating entry:", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to create entry";
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    
-    console.error("Error details:", {
-      message: errorMessage,
-      stack: errorStack,
-      name: error instanceof Error ? error.name : "Unknown",
-    });
-
     return NextResponse.json(
-      {
-        error: errorMessage,
-        details: process.env.NODE_ENV === "development" ? errorStack : undefined,
-      },
+      { error: error instanceof Error ? error.message : "Failed to create entry" },
       { status: 500 }
     );
   }
@@ -196,27 +209,19 @@ export async function POST(request: NextRequest) {
 
 // GET /api/entries - List entries with filters
 export async function GET(request: NextRequest) {
-  try {
-    // Get userId from Firebase ID token
-    const userId = await getUserIdFromRequest(request);
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Authentication required. Please sign in." },
-        { status: 401 }
-      );
-    }
+  const auth = await requireUser(request);
+  if (auth instanceof NextResponse) return auth;
+  const { userId } = auth;
 
+  try {
     const searchParams = request.nextUrl.searchParams;
 
-    // Build query
     let query: FirebaseFirestore.Query = adminDb
-      .collection("entries")
+      .collection(ENTRIES)
       .where("userId", "==", userId);
 
-    // Apply filters
     const type = searchParams.get("type");
-    if (type && (type === "note" || type === "url")) {
+    if (type && ["note", "url", "image"].includes(type)) {
       query = query.where("type", "==", type);
     }
 
@@ -230,65 +235,24 @@ export async function GET(request: NextRequest) {
       query = query.where("sentiment", "==", sentiment);
     }
 
-    // Date range filtering
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
-
-    // Note: Firestore requires orderBy before where clauses with range filters
-    // So we'll filter after fetching if needed, or use a different approach
-    // For now, we'll filter client-side after fetching
-    
-    // Order by createdAt descending (newest first)
-    query = query.orderBy("createdAt", "desc");
-
-    // Limit results
-    const limit = parseInt(searchParams.get("limit") || "50");
-    query = query.limit(limit);
+    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "50") || 50, 1), 2000);
+    query = query.orderBy("createdAt", "desc").limit(limit);
 
     const snapshot = await query.get();
-    let entries = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-      };
-    }) as Entry[];
+    let entries = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Entry[];
 
-    // Filter by date range if provided (client-side filtering)
-    // This is necessary because Firestore requires orderBy before range filters
-    if (from) {
-      const fromDate = new Date(from);
+    // Date range is filtered in memory (Firestore orderBy/range limitation).
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (from || to) {
+      const fromDate = from ? new Date(from) : null;
+      const toDateLimit = to ? new Date(to) : null;
       entries = entries.filter((entry) => {
-        if (!entry.createdAt) return false;
-        let entryDate: Date;
-        if (entry.createdAt && typeof (entry.createdAt as any).toDate === "function") {
-          // Firestore Timestamp
-          entryDate = (entry.createdAt as any).toDate();
-        } else if (entry.createdAt && (entry.createdAt as any).seconds) {
-          // Firestore Timestamp in serialized form
-          entryDate = new Date((entry.createdAt as any).seconds * 1000);
-        } else {
-          entryDate = new Date(entry.createdAt as any);
-        }
-        return entryDate >= fromDate;
-      });
-    }
-
-    if (to) {
-      const toDate = new Date(to);
-      entries = entries.filter((entry) => {
-        if (!entry.createdAt) return false;
-        let entryDate: Date;
-        if (entry.createdAt && typeof (entry.createdAt as any).toDate === "function") {
-          entryDate = (entry.createdAt as any).toDate();
-        } else if (entry.createdAt && (entry.createdAt as any).seconds) {
-          entryDate = new Date((entry.createdAt as any).seconds * 1000);
-        } else {
-          entryDate = new Date(entry.createdAt as any);
-        }
-        return entryDate <= toDate;
+        const d = toDate(entry.createdAt);
+        if (!d) return false;
+        if (fromDate && d < fromDate) return false;
+        if (toDateLimit && d > toDateLimit) return false;
+        return true;
       });
     }
 
@@ -296,11 +260,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching entries:", error);
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to fetch entries",
-      },
+      { error: error instanceof Error ? error.message : "Failed to fetch entries" },
       { status: 500 }
     );
   }
 }
-

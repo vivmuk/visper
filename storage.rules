@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// All uploads and downloads go through the Visper server (Admin SDK), which
+// bypasses these rules. Images are viewed through private download-token URLs,
+// which also bypass them. So direct client access is denied entirely.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
