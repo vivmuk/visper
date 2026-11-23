@@ -5,10 +5,12 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { useToast } from "@/lib/toast/ToastContext";
 import { apiDownload, apiFetch, errorMessage } from "@/lib/client/api";
 import { monthKey } from "@/lib/client/format";
-import { entryImages } from "@/lib/entries/shared";
+import { dayKey, entryImages, localParts, toDate } from "@/lib/entries/shared";
 import DeleteConfirmationDialog from "./DeleteConfirmationDialog";
 import EditEntrySheet from "./EditEntrySheet";
 import EntryCard from "./EntryCard";
+import EntryListSheet from "./EntryListSheet";
+import JournalCalendar from "./JournalCalendar";
 import ImageViewer, { type ViewerImage } from "./ImageViewer";
 import BottomSheet from "./ui/BottomSheet";
 import EmptyState from "./ui/EmptyState";
@@ -16,9 +18,16 @@ import { DownloadIcon, RefreshIcon, SearchIcon, SparkleIcon, TagIcon, XIcon } fr
 import type { Entry } from "@/types";
 
 type TypeFilter = "all" | "note" | "url" | "image";
+type JournalView = "list" | "calendar";
+const VIEW_KEY = "visper:journal-view";
 type MoodFilter = "all" | "positive" | "neutral" | "negative";
 
 const PAGE = 25;
+
+function localDayKey(entry: Entry) {
+  const d = toDate(entry.createdAt);
+  return d ? dayKey(localParts(d)) : "";
+}
 
 export default function EntryHistory({ onWrite }: { userId?: string; onWrite?: () => void }) {
   const { user } = useAuth();
@@ -46,6 +55,25 @@ export default function EntryHistory({ onWrite }: { userId?: string; onWrite?: (
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [viewer, setViewer] = useState<{ images: ViewerImage[]; index: number } | null>(null);
+  const [view, setView] = useState<JournalView>("list");
+  const [daySheet, setDaySheet] = useState<{ key: string; label: string } | null>(null);
+
+  // Remember List / Calendar between visits.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(VIEW_KEY) === "calendar") setView("calendar");
+    } catch {
+      // Storage unavailable
+    }
+  }, []);
+  const switchView = (next: JournalView) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Storage unavailable
+    }
+  };
 
   const monthRefs = useRef<Record<string, HTMLElement | null>>({});
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -183,6 +211,7 @@ export default function EntryHistory({ onWrite }: { userId?: string; onWrite?: (
   }, []);
 
   const handleTag = useCallback((tag: string) => {
+    setView("list");
     setSelectedTag(tag);
     setShowTags(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -203,6 +232,11 @@ export default function EntryHistory({ onWrite }: { userId?: string; onWrite?: (
       setIsDeleting(false);
     }
   };
+
+  const onDeletedId = useCallback((id: string) => {
+    setAllEntries((list) => list.filter((e) => e.id !== id));
+    setSearchResults((list) => list && list.filter((e) => e.id !== id));
+  }, []);
 
   const onEdited = useCallback((updated: Entry) => {
     const merge = (list: Entry[]) => list.map((e) => (e.id === updated.id ? { ...e, ...updated } : e));
@@ -287,8 +321,60 @@ export default function EntryHistory({ onWrite }: { userId?: string; onWrite?: (
   const shown = entries.slice(0, visibleCount);
   const monthStarts = new Set(months.map((m) => m.firstIndex));
 
+  const dayEntries = daySheet
+    ? allEntries.filter((e) => {
+        return localDayKey(e) === daySheet.key;
+      })
+    : [];
+
+  const viewToggle = (
+    <div className="flex justify-center mb-3">
+      <div className="flex p-1 rounded-full bg-white/70 border border-white shadow-sm" role="tablist" aria-label="Journal view">
+        {(["list", "calendar"] as JournalView[]).map((v) => (
+          <button
+            key={v}
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => switchView(v)}
+            className={`h-9 px-5 rounded-full text-sm font-medium transition ${
+              view === v ? "bg-gradient-to-r from-teal-500 to-purple-500 text-white shadow" : "text-slate-600"
+            }`}
+          >
+            {v === "list" ? "List" : "Calendar"}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (view === "calendar") {
+    return (
+      <div>
+        {viewToggle}
+        <JournalCalendar
+          entries={allEntries}
+          onOpenDay={(key, label) => setDaySheet({ key, label })}
+          onEdited={onEdited}
+          onDeleted={onDeletedId}
+          onTagClick={handleTag}
+        />
+        <EntryListSheet
+          open={!!daySheet}
+          title={daySheet?.label || ""}
+          subtitle={`${dayEntries.length} entr${dayEntries.length === 1 ? "y" : "ies"}`}
+          entries={dayEntries}
+          onClose={() => setDaySheet(null)}
+          onEdited={onEdited}
+          onDeleted={onDeletedId}
+          onTagClick={handleTag}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="animate-rise-in">
+      {viewToggle}
       {/* Search + filters (sticky under the header) */}
       <div className="sticky top-[calc(var(--header-h)+var(--safe-top))] z-20 -mx-4 px-4 pt-2 pb-3 glass md:mx-0 md:px-0 md:bg-transparent md:backdrop-blur-0">
         <div className="flex items-center gap-2">

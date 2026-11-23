@@ -44,9 +44,9 @@ export default function CaptureForm({ onSaved }: CaptureFormProps) {
   const [hello, setHello] = useState("");
   const [prompt, setPrompt] = useState("What's on your mind?");
   useEffect(() => {
-    setHello(greeting());
+    setHello(greeting(user?.displayName?.split(" ")[0]));
     setPrompt(dailyPrompt());
-  }, []);
+  }, [user]);
 
   // Restore the draft (also used by "Write about this" from reflections).
   useEffect(() => {
@@ -239,7 +239,6 @@ export default function CaptureForm({ onSaved }: CaptureFormProps) {
     >
       <p className="text-sm text-slate-500 mb-2 px-1 min-h-5">
         {hello}
-        {hello && user?.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
       </p>
 
       <div

@@ -26,9 +26,11 @@ interface EntryCardProps {
   onDelete: (entry: Entry) => void;
   onCopy: (entry: Entry) => void;
   onOpenImage: (entry: Entry, index: number) => void;
+  /** Show a relative label like "1 year ago" instead of the friendly date */
+  dateLabel?: string;
 }
 
-function EntryCard({ entry, onTagClick, onEdit, onDelete, onCopy, onOpenImage }: EntryCardProps) {
+function EntryCard({ entry, onTagClick, onEdit, onDelete, onCopy, onOpenImage, dateLabel }: EntryCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const images = entryImages(entry);
@@ -42,7 +44,7 @@ function EntryCard({ entry, onTagClick, onEdit, onDelete, onCopy, onOpenImage }:
     <article className="watercolor-card rounded-3xl border border-white/70 overflow-hidden">
       <header className="flex items-center justify-between px-4 pt-3.5">
         <div className="flex items-center gap-2 text-sm text-slate-500">
-          <time>{friendlyDate(entry.createdAt)}</time>
+          <time>{dateLabel || friendlyDate(entry.createdAt)}</time>
           {sentiment && (
             <span className="inline-flex items-center gap-1" title={`Mood: ${sentiment.label}`}>
               <span className={`h-2 w-2 rounded-full ${sentiment.dot}`} />

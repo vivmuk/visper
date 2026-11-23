@@ -7,6 +7,7 @@ import UrlSummarizer from "@/components/UrlSummarizer";
 import EntryHistory from "@/components/EntryHistory";
 import ImageGallery from "@/components/ImageGallery";
 import AskJournal from "@/components/AskJournal";
+import TodayMemories from "@/components/MemoriesCard";
 import LoginButton from "@/components/LoginButton";
 import { BookIcon, CloudOffIcon, LinkIcon, PenIcon, PhotoIcon, SparkleIcon, XIcon } from "@/components/ui/Icons";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -175,7 +176,12 @@ export default function Home() {
 
       {/* Content */}
       <main className="max-w-3xl mx-auto px-4 pt-4 pb-nav md:pb-12">
-        {tab === "write" && <CaptureForm />}
+        {tab === "write" && (
+          <>
+            <CaptureForm />
+            <TodayMemories />
+          </>
+        )}
         {tab === "link" && <UrlSummarizer />}
         {tab === "journal" && <EntryHistory onWrite={() => go("write")} />}
         {tab === "photos" && <ImageGallery onWrite={() => go("write")} />}
