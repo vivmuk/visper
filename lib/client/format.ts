@@ -33,13 +33,14 @@ export function wordCount(text: string) {
   return words ? words.length : 0;
 }
 
-export function greeting() {
+export function greeting(name?: string) {
   const h = new Date().getHours();
-  if (h < 5) return "Still up?";
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  if (h < 22) return "Good evening";
-  return "Quiet night";
+  const who = name ? `, ${name}` : "";
+  if (h < 5) return `Still up${who}?`;
+  if (h < 12) return `Good morning${who}`;
+  if (h < 17) return `Good afternoon${who}`;
+  if (h < 22) return `Good evening${who}`;
+  return `Quiet night${who}`;
 }
 
 const PROMPTS = [

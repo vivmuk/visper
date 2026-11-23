@@ -64,6 +64,7 @@ app/
 │   ├── ask/            # POST - "Ask my journal" (RAG over the user's entries)
 │   ├── reflect/        # POST - Weekly/monthly AI reflection
 │   ├── transcribe/     # POST - Voice note -> text (audio is not stored)
+│   ├── memories/       # GET - "On this day" / "this week in past years" (small per-year date windows)
 │   ├── embeddings/backfill/ # POST - Index entries that lack an up-to-date embedding
 │   ├── images/secure/  # GET count / POST migrate legacy public images to private URLs
 │   └── health/         # GET - Firestore / Storage / Venice balance status
@@ -73,7 +74,10 @@ app/
 components/
 ├── CaptureForm.tsx           # Write tab: text, multiple photos, voice, polish, draft autosave, offline outbox
 ├── UrlSummarizer.tsx         # Link tab: summarize + save links
-├── EntryHistory.tsx          # Journal tab: search, filters, month jump, tags, export
+├── EntryHistory.tsx          # Journal tab: List / Calendar toggle, search, filters, month jump, tags, export
+├── JournalCalendar.tsx       # Year of mini-month heatmaps, streaks, year switcher, memories
+├── MemoriesCard.tsx          # "On this day" strip (Write tab via /api/memories; Calendar computes locally)
+├── EntryListSheet.tsx        # Sheet listing entries for a day/memory with copy/edit/delete
 ├── EntryCard.tsx             # One entry in the journal
 ├── EditEntrySheet.tsx        # Edit text + tags
 ├── ImageGallery.tsx          # Photos tab
@@ -95,7 +99,8 @@ lib/
 ├── auth/
 │   └── middleware.ts   # getUserIdFromRequest() / requireUser() for API routes
 ├── entries/
-│   ├── shared.ts       # Pure helpers (toDate, entryImages) for server + browser
+│   ├── shared.ts       # Pure helpers for server + browser: toDate, entryImages, localParts/dayKey
+│   │                   # (time-zone aware days), entriesByDay, computeStreaks, findMemories
 │   └── server.ts       # entryToText, embeddings upsert/backfill, semantic ranking
 ├── client/             # Browser helpers: apiFetch (auth + readable errors), image compression,
 │                       # offline outbox, date formatting
